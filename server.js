@@ -105,10 +105,12 @@ const ALMAI_INFO = `
 - 💻 Программист — специализируется на коде, использует блоки кода
 
 ## Доступные модели
-- 🧠 Llama 70B — самая умная модель, лимит 5000 токенов на пользователя (после лимита нужно сменить модель)
+- 🧠 Llama 70B — умная модель, лимит 5000 токенов на пользователя
+- 🦙 Llama 4 Scout — новейшая от Meta, очень умная, без лимита
+- 🦙 Llama 4 Maverick — самая мощная, без лимита
 - ⚡ Llama 8B — быстрая лёгкая модель, без лимита
 - 🔥 Mixtral — мощная модель, без лимита
-- 💎 Gemma 2 — от Google, без лимита
+- 🔮 Qwen 32B — мощная китайская модель, без лимита
 
 ## Лимит токенов
 Модель Llama 70B имеет лимит 5000 токенов на каждого пользователя. Счётчик токенов виден в боковой панели под кнопкой "Новый чат". Когда лимит исчерпан — поле ввода блокируется и предлагается сменить модель. Остальные модели без ограничений.
@@ -514,8 +516,8 @@ if (TG_TOKEN) {
     }
     if (text.startsWith("/setmodel")) {
       const num = text.replace("/setmodel", "").trim();
-      const models = { "1": "llama-3.3-70b-versatile", "2": "llama-3.1-8b-instant", "3": "mixtral-8x7b-32768", "4": "gemma2-9b-it" };
-      const names = { "1": "Llama 70B", "2": "Llama 8B", "3": "Mixtral", "4": "Gemma 2" };
+      const models = { "1": "llama-3.3-70b-versatile", "2": "meta-llama/llama-4-scout-17b-16e-instruct", "3": "meta-llama/llama-4-maverick-17b-128e-instruct", "4": "llama-3.1-8b-instant", "5": "mixtral-8x7b-32768", "6": "qwen-qwq-32b" };
+      const names = { "1": "Llama 70B", "2": "Llama 4 Scout", "3": "Llama 4 Maverick", "4": "Llama 8B", "5": "Mixtral", "6": "Qwen 32B" };
       if (models[num]) { settings.model = models[num]; return tgSend(chatId, "✅ Модель изменена на *" + names[num] + "*!"); }
       return tgSend(chatId, "❌ Напиши /setmodel 1, /setmodel 2, /setmodel 3 или /setmodel 4");
     }
@@ -587,7 +589,8 @@ if (TG_TOKEN) {
     }
     const history = tgUserHistory[chatId].slice(-10);
     let systemPrompt = (SYSTEM_PROMPTS[settings.personality] || SYSTEM_PROMPTS.friendly) + "\n\nСейчас: " + getCurrentDateTime() + " (МСК)." +
-      "\n\n## Телеграм\nТы работаешь в Телеграме. Твой юзернейм: @almaiialaishhs_bot. Ты знаешь что существуешь и в Телеграме и на сайте https://almai-6go8.onrender.com. В Телеграме нет визуального интерфейса — только текст и картинки.";
+      "\n\n## Телеграм\nТы работаешь в Телеграме. Твой юзернейм: @almaiialaishhs_bot. Ты знаешь что существуешь и в Телеграме и на сайте https://almai-6go8.onrender.com. В Телеграме нет визуального интерфейса — только текст и картинки." +
+      "\n\n## Мультиязычность\nОпредели язык сообщения пользователя и отвечай на том же языке. Если пишут по-украински — отвечай по-украински, по-английски — по-английски и т.д.";
     if (isWeatherQuery(text)) {
       const city = extractCity(text);
       if (city) { const weather = await fetchWeather(city); if (weather) systemPrompt += "\n\nАктуальная погода: " + weather; }
