@@ -515,10 +515,10 @@ if (TG_TOKEN) {
     }
     if (text.startsWith("/setmodel")) {
       const num = text.replace("/setmodel", "").trim();
-      const models = { "1": "llama-3.3-70b-versatile", "2": "meta-llama/llama-4-scout-17b-16e-instruct", "4": "llama-3.1-8b-instant", "5": "mixtral-8x7b-32768", "6": "qwen-qwq-32b" };
+      const models = { "1": "llama-3.3-70b-versatile", "2": "meta-llama/llama-4-scout-17b-16e-instruct", "3": "llama-3.1-8b-instant", "4": "openai/gpt-oss-120b", "5": "moonshotai/kimi-k2-instruct-0905" };
       const names = { "1": "Llama 70B", "2": "Llama 4 Scout", "4": "Llama 8B", "5": "Mixtral", "6": "Qwen 32B" };
       if (models[num]) { settings.model = models[num]; return tgSend(chatId, "✅ Модель изменена на *" + names[num] + "*!"); }
-      return tgSend(chatId, "❌ Напиши /setmodel 1, /setmodel 2, /setmodel 3 или /setmodel 4");
+      return tgSend(chatId, "❌ Напиши /setmodel 1 — /setmodel 5");
     }
     if (text === "/mode") {
       return tgSend(chatId, `🎭 *Выбор режима*
