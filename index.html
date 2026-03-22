@@ -455,9 +455,77 @@
       .status-badge { display: none; }
       .input-shell { padding: 10px 12px 14px; }
     }
+    .google-login-btn {
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 14px; border-radius: var(--radius-md);
+      background: var(--bg-elevated); border: 1px solid var(--border-accent);
+      color: var(--text-1); font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: var(--trans); white-space: nowrap;
+    }
+    .google-login-btn:hover { background: var(--bg-hover); }
+    .user-avatar { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border-accent); }
+    .user-name { font-size: 13px; font-weight: 500; color: var(--text-1); max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .logout-btn { padding: 5px 10px; border-radius: var(--radius-sm); background: transparent; border: 1px solid var(--border); color: var(--text-2); font-size: 12px; cursor: pointer; transition: var(--trans); }
+    .logout-btn:hover { background: var(--bg-hover); color: var(--danger); border-color: var(--danger); }
+
+    /* Экран авторизации */
+    #authScreen {
+      position: fixed; inset: 0; z-index: 9999;
+      background: var(--bg-base);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .auth-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-accent);
+      border-radius: 24px;
+      padding: 48px 44px;
+      text-align: center;
+      max-width: 380px; width: 90%;
+      box-shadow: var(--glow-lg);
+    }
+    .auth-logo { font-size: 52px; margin-bottom: 12px; }
+    .auth-title { font-size: 28px; font-weight: 800; background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px; }
+    .auth-sub { font-size: 14px; color: var(--text-2); margin-bottom: 32px; line-height: 1.5; }
+    .auth-google-btn {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      width: 100%; padding: 14px 20px;
+      background: #fff; color: #3c4043;
+      border: 1px solid #dadce0; border-radius: 12px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      transition: box-shadow .2s; text-decoration: none;
+    }
+    .auth-google-btn:hover { box-shadow: 0 2px 16px rgba(0,0,0,.15); }
+    .auth-note { font-size: 11px; color: var(--text-3); margin-top: 18px; }
+
+    /* Лимит токенов */
+    .token-bar-wrap { padding: 0 12px 8px; }
+    .token-bar-label { font-size: 11px; color: var(--text-3); margin-bottom: 4px; display: flex; justify-content: space-between; }
+    .token-bar-bg { height: 4px; background: var(--bg-elevated); border-radius: 4px; overflow: hidden; }
+    .token-bar-fill { height: 100%; background: var(--grad); border-radius: 4px; transition: width .4s; }
+    .token-bar-fill.warn { background: linear-gradient(90deg,#f59e0b,#ef4444); }
+    .token-limit-msg {
+      margin: 0 12px 10px;
+      padding: 10px 14px; border-radius: var(--radius-md);
+      background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.3);
+      color: var(--danger); font-size: 13px; text-align: center; line-height: 1.4;
+    }
   </style>
 </head>
 <body>
+
+<!-- Экран авторизации -->
+<div id="authScreen" style="display:none">
+  <div class="auth-card">
+    <div class="auth-logo">🤖</div>
+    <div class="auth-title">ALMAi</div>
+    <div class="auth-sub">Умный ИИ-ассистент.<br>Войдите чтобы начать общение.</div>
+    <a href="/auth/google" class="auth-google-btn">
+      <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Войти через Google
+    </a>
+    <div class="auth-note">Регистрация бесплатна. Данные хранятся только у вас.</div>
+  </div>
+</div>
 
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
@@ -473,6 +541,13 @@
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
     Новый чат
   </button>
+  <div class="token-bar-wrap" id="tokenBarWrap" style="display:none">
+    <div class="token-bar-label">
+      <span>🧠 Llama 70B токены</span>
+      <span id="tokenCount">0 / 5000</span>
+    </div>
+    <div class="token-bar-bg"><div class="token-bar-fill" id="tokenBarFill" style="width:0%"></div></div>
+  </div>
   <div class="search-wrap">
     <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
     <input class="search-input" id="searchInput" placeholder="Поиск по истории..." oninput="filterSessions(this.value)">
@@ -506,13 +581,16 @@
         <option value="professional">💼 Профессионал</option>
         <option value="programmer">💻 Программист</option>
       </select>
-      <select class="personality-select" id="modelSelect" onchange="selectedModel=this.value" title="Модель">
+      <select class="personality-select" id="modelSelect" onchange="selectedModel=this.value;updateTokenBar()" title="Модель">
         <option value="llama-3.3-70b-versatile">🧠 Llama 70B</option>
         <option value="llama-3.1-8b-instant">⚡ Llama 8B</option>
         <option value="mixtral-8x7b-32768">🔥 Mixtral</option>
         <option value="gemma2-9b-it">💎 Gemma 2</option>
       </select>
       <button class="icon-btn" onclick="toggleTheme()" id="themeBtn" title="Тема">🌙</button>
+      <div id="authArea" style="display:flex;align-items:center;gap:8px;">
+        <!-- заполняется JS -->
+      </div>
       <div class="status-badge">
         <span class="status-dot"></span>
         Активен
@@ -569,11 +647,103 @@
   const $title = document.getElementById('topbarTitle');
   const $theme = document.getElementById('themeBtn');
 
+  // Fallback гостевой ID (если не залогинен через Google)
   let userId = localStorage.getItem('almai_user_id'); if (!userId) { userId = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2,9); localStorage.setItem('almai_user_id', userId); }
+  let currentUser = null; // Google user object
   let sessionId = null, convo = [], memories = [], loading = false;
   let sessions = [], personality = 'friendly', isDark = true;
   let pendingImage = null;
   let selectedModel = 'llama-3.3-70b-versatile';
+
+  // Auth
+  async function initAuth() {
+    try {
+      const res = await fetch('/api/me');
+      const data = await res.json();
+      currentUser = data.user;
+      if (!currentUser) {
+        // Показываем экран авторизации
+        document.getElementById('authScreen').style.display = 'flex';
+        return false; // не загружать чаты
+      }
+      document.getElementById('authScreen').style.display = 'none';
+      renderAuthArea();
+      await loadTokenUsage();
+      return true;
+    } catch(e) {
+      document.getElementById('authScreen').style.display = 'flex';
+      return false;
+    }
+  }
+  function renderAuthArea() {
+    const area = document.getElementById('authArea');
+    if (currentUser) {
+      area.innerHTML = `
+        ${currentUser.photo ? `<img src="${currentUser.photo}" class="user-avatar" alt="avatar">` : ''}
+        <span class="user-name">${currentUser.name}</span>
+        <button class="logout-btn" onclick="window.location='/auth/logout'">Выйти</button>
+      `;
+    } else {
+      area.innerHTML = `
+        <button class="google-login-btn" onclick="window.location='/auth/google'">
+          <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Войти через Google
+        </button>
+      `;
+    }
+  }
+
+  // Лимит токенов
+  let tokenUsed = 0; const TOKEN_LIMIT = 5000;
+  async function loadTokenUsage() {
+    try {
+      const r = await fetch('/api/token-usage');
+      const d = await r.json();
+      tokenUsed = d.used || 0;
+      updateTokenBar();
+    } catch(e) {}
+  }
+  function updateTokenBar() {
+    const wrap = document.getElementById('tokenBarWrap');
+    const fill = document.getElementById('tokenBarFill');
+    const count = document.getElementById('tokenCount');
+    if (!wrap) return;
+    wrap.style.display = 'block';
+    const pct = Math.min(100, (tokenUsed / TOKEN_LIMIT) * 100);
+    fill.style.width = pct + '%';
+    fill.className = 'token-bar-fill' + (pct >= 80 ? ' warn' : '');
+    count.textContent = `${tokenUsed} / ${TOKEN_LIMIT}`;
+    // Блокировка ввода
+    const isLimited = selectedModel === 'llama-3.3-70b-versatile' && tokenUsed >= TOKEN_LIMIT;
+    updateLimitMessage(isLimited);
+  }
+  function updateLimitMessage(isLimited) {
+    let msg = document.getElementById('tokenLimitMsg');
+    const inputArea = document.querySelector('.input-area') || document.querySelector('.input-shell');
+    if (isLimited) {
+      if (!msg) {
+        msg = document.createElement('div');
+        msg.id = 'tokenLimitMsg';
+        msg.className = 'token-limit-msg';
+        msg.innerHTML = '⚠️ Лимит Llama 70B исчерпан. Выберите другую модель.';
+        inputArea && inputArea.parentNode.insertBefore(msg, inputArea);
+      }
+      $inp.disabled = true;
+      $inp.placeholder = 'Лимит исчерпан — смените модель ↑';
+      document.querySelector('.send-btn') && (document.querySelector('.send-btn').disabled = true);
+    } else {
+      if (msg) msg.remove();
+      $inp.disabled = false;
+      $inp.placeholder = 'Напишите сообщение...';
+      document.querySelector('.send-btn') && (document.querySelector('.send-btn').disabled = false);
+    }
+  }
+
+  function getAuthHeaders(extra) {
+    const h = { ...extra };
+    if (!currentUser) h['x-user-id'] = userId;
+    return h;
+  }
 
   marked.setOptions({ breaks: true, gfm: true });
   const md = t => DOMPurify.sanitize(marked.parse(t));
@@ -657,7 +827,7 @@
 
   async function loadSessions(){
     try{
-      sessions=await(await fetch('/api/sessions',{headers:{'x-user-id':userId}})).json();
+      sessions=await(await fetch('/api/sessions',{headers:getAuthHeaders({})})).json();
       renderSidebar();
     }catch{$hist.innerHTML='<div class="history-empty"><span class="hi-emoji">😔</span>Не удалось загрузить историю</div>';}
   }
@@ -686,7 +856,7 @@
 
   async function loadSession(id){
     if(id===sessionId||loading)return;
-    const res=await fetch(`/api/sessions/${id}`,{headers:{'x-user-id':userId}});
+    const res=await fetch(`/api/sessions/${id}`,{headers:getAuthHeaders({})});
     if(!res.ok)return;
     const s=await res.json();
     sessionId=id; convo=s.messages.map(m=>({role:m.role,content:m.content})); closeSidebar();
@@ -699,7 +869,7 @@
 
   async function delSession(e,id){
     e.stopPropagation();
-    await fetch(`/api/sessions/${id}`,{method:'DELETE',headers:{'x-user-id':userId}});
+    await fetch(`/api/sessions/${id}`,{method:'DELETE',headers:getAuthHeaders({})});
     sessions=sessions.filter(s=>s.id!==id);
     if(sessionId===id){sessionId=null;convo=[];memories=[];renderMem();$msg.innerHTML='';$title.textContent='💬 ALMAi Chat';renderWelcome();}
     renderSidebar();
@@ -786,7 +956,7 @@
     const sessionTitle=(text||'Изображение').slice(0,50)+((text&&text.length>50)?'…':'');
     if(!sessionId){
       try{
-        const s=await(await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json','x-user-id':userId},
+        const s=await(await fetch('/api/sessions',{method:'POST',headers:getAuthHeaders({'Content-Type':'application/json'}),
           body:JSON.stringify({title:sessionTitle})})).json();
         sessionId=s.id; sessions.unshift(s); renderSidebar(); setActive(sessionId);
         $title.textContent='💬 '+s.title;
@@ -824,7 +994,7 @@
           const saved=`🎨 Сгенерированное изображение: ${prompt}`;
           convo.push({role:'assistant',content:saved});
           if(sessionId){
-            fetch(`/api/sessions/${sessionId}/messages`,{method:'POST',headers:{'Content-Type':'application/json','x-user-id':userId},
+            fetch(`/api/sessions/${sessionId}/messages`,{method:'POST',headers:getAuthHeaders({'Content-Type':'application/json'}),
               body:JSON.stringify({messages:[{role:'assistant',content:saved,timestamp:aiTs}]})});
             const idx=sessions.findIndex(s=>s.id===sessionId);
             if(idx!==-1){sessions[idx].updatedAt=aiTs;sessions.sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));renderSidebar();setActive(sessionId);}
@@ -849,7 +1019,7 @@
         renderMsg('ai',full,aiTs);
         convo.push({role:'assistant',content:full});
         if(sessionId&&full){
-          await fetch(`/api/sessions/${sessionId}/messages`,{method:'POST',headers:{'Content-Type':'application/json','x-user-id':userId},
+          await fetch(`/api/sessions/${sessionId}/messages`,{method:'POST',headers:getAuthHeaders({'Content-Type':'application/json'}),
             body:JSON.stringify({messages:[{role:'user',content:text||'🖼️ Изображение',timestamp:userTs},{role:'assistant',content:full,timestamp:aiTs}]})});
           const idx=sessions.findIndex(s=>s.id===sessionId);
           if(idx!==-1){sessions[idx].updatedAt=aiTs;sessions.sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));renderSidebar();setActive(sessionId);}
@@ -865,10 +1035,23 @@
     }
 
     try{
+      // Проверка лимита перед отправкой
+      if(selectedModel==='llama-3.3-70b-versatile' && tokenUsed>=TOKEN_LIMIT){
+        renderMsg('ai','⚠️ Лимит токенов Llama 70B исчерпан. Выберите другую модель в меню выше.');
+        return;
+      }
       const resp=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({message:text,history:convo.slice(-20),personality,stream:true,model:selectedModel})});
       hideTyping();
-      if(!resp.ok){renderMsg('ai','❌ Ошибка при получении ответа.');return;}
+      if(!resp.ok){
+        const errData=await resp.json().catch(()=>({}));
+        if(errData.error==='token_limit_exceeded'){
+          tokenUsed=errData.used||TOKEN_LIMIT; updateTokenBar();
+          renderMsg('ai','⚠️ Лимит токенов Llama 70B исчерпан. Выберите другую модель в меню выше.');
+          return;
+        }
+        renderMsg('ai','❌ Ошибка при получении ответа.');return;
+      }
       hideWelcome();
       const row=document.createElement('div'); row.className='msg-row ai';
       const av=document.createElement('div'); av.className='avatar ai'; av.textContent='🤖';
@@ -907,11 +1090,13 @@
       const aiTs=new Date().toISOString();
       convo.push({role:'assistant',content:full});
       if(sessionId&&full){
-        await fetch(`/api/sessions/${sessionId}/messages`,{method:'POST',headers:{'Content-Type':'application/json','x-user-id':userId},
+        await fetch(`/api/sessions/${sessionId}/messages`,{method:'POST',headers:getAuthHeaders({'Content-Type':'application/json'}),
           body:JSON.stringify({messages:[{role:'user',content:text,timestamp:userTs},{role:'assistant',content:full,timestamp:aiTs}]})});
         const idx=sessions.findIndex(s=>s.id===sessionId);
         if(idx!==-1){sessions[idx].updatedAt=aiTs;sessions.sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));renderSidebar();setActive(sessionId);}
       }
+      // Обновляем токены
+      if(selectedModel==='llama-3.3-70b-versatile') loadTokenUsage();
     }catch{
       hideTyping();
       renderMsg('ai','❌ Не удалось подключиться к серверу. Попробуйте ещё раз.');
@@ -923,7 +1108,7 @@
 
   function sendSuggestion(t){$inp.value=t;sendMessage();}
 
-  loadSessions();
+  initAuth().then(ok => { if(ok) loadSessions(); });
   $inp.focus();
 
   function toggleSidebar() {
