@@ -409,54 +409,17 @@ async function translateToEnglish(prompt) {
     return d.choices?.[0]?.message?.content?.trim() || prompt;
   } catch { return prompt; }
 }
-async function fetchHuggingFaceImage(englishPrompt) {
-  const HF_TOKEN = process.env.HF_TOKEN;
-  const models = [
-    "stabilityai/stable-diffusion-xl-base-1.0",
-    "runwayml/stable-diffusion-v1-5",
-    "prompthero/openjourney-v4"
-  ];
-  for (const model of models) {
-    try {
-      const headers = { "Content-Type": "application/json" };
-      if (HF_TOKEN) headers["Authorization"] = `Bearer ${HF_TOKEN}`;
-      let r = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
-        method: "POST", headers,
-        body: JSON.stringify({ inputs: englishPrompt }),
-        timeout: 60000
-      });
-      if (r.status === 503) {
-        console.log(`[image] model ${model} loading, waiting 10s...`);
-        await new Promise(resolve => setTimeout(resolve, 10000));
-        r = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
-          method: "POST", headers,
-          body: JSON.stringify({ inputs: englishPrompt }),
-          timeout: 60000
-        });
-      }
-      if (!r.ok) { console.log(`[image] ${model} failed: ${r.status}`); continue; }
-      const contentType = r.headers.get("content-type") || "";
-      if (!contentType.includes("image")) continue;
-      const buf = Buffer.from(await r.arrayBuffer());
-      if (buf.length < 1000) continue;
-      return { buf, contentType };
-    } catch (err) { console.log(`[image] ${model} error: ${err.message}`); continue; }
-  }
-  throw new Error("all models failed");
-}
 app.get("/api/generate-image", async (req, res) => {
   const { prompt } = req.query;
   if (!prompt) return res.status(400).json({ error: "prompt is required" });
   try {
     const englishPrompt = await translateToEnglish(prompt);
-    console.log(`[image] generating: ${englishPrompt}`);
-    const { buf, contentType } = await fetchHuggingFaceImage(englishPrompt);
-    console.log(`[image] success: ${buf.length} bytes`);
-    return res.json({ image: `data:${contentType};base64,${buf.toString("base64")}` });
+    const seed = Math.floor(Math.random() * 999999);
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(englishPrompt)}?width=768&height=768&nologo=true&seed=${seed}&model=flux&nofeed=true&enhance=true`;
+    console.log(`[image] url: ${url}`);
+    return res.json({ imageUrl: url });
   } catch (err) {
     console.error("[image] error:", err.message);
-    res.status(502).json({ error: "Не удалось сгенерировать изображение. Попробуйте другой запрос или подождите немного." });
+    res.status(500).json({ error: "Ошибка сервера" });
   }
 });
-
-app.listen(PORT, "0.0.0.0", () => { console.log(`ALMAi server running on port ${PORT}`); });
