@@ -415,7 +415,7 @@ app.get("/api/generate-image", async (req, res) => {
   try {
     const englishPrompt = await translateToEnglish(prompt);
     const seed = Math.floor(Math.random() * 999999);
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(englishPrompt)}?width=768&height=768&nologo=true&seed=${seed}&model=flux&nofeed=true&enhance=true`;
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(englishPrompt)}?width=768&height=768&nologo=true&seed=${seed}&nofeed=true`;
     console.log(`[image] url: ${url}`);
     return res.json({ imageUrl: url });
   } catch (err) {
