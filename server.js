@@ -2,46 +2,116 @@ const express = require("express");
 const fetch = require("node-fetch");
 const path = require("path");
 const fs = require("fs");
+const session = require("express-session");
+const passport = require("passport");
+const { Strategy: GoogleStrategy } = require("passport-google-oauth20");
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, "chats.json");
+
 app.use(express.json({ limit: "25mb" }));
+app.use(session({
+  secret: process.env.SESSION_SECRET || "almai-secret-key-change-me",
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 30 * 24 * 60 * 60 * 1000 } // 30 дней
+}));
+app.use(passport.initialize());
+app.use(passport.session());
+
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((user, done) => done(null, user));
+
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: process.env.GOOGLE_CALLBACK_URL || "https://almai-6go8.onrender.com/auth/google/callback"
+}, (accessToken, refreshToken, profile, done) => {
+  const user = {
+    id: profile.id,
+    name: profile.displayName,
+    email: profile.emails?.[0]?.value,
+    photo: profile.photos?.[0]?.value
+  };
+  return done(null, user);
+}));
+
+app.get("/auth/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+
+app.get("/auth/google/callback",
+  passport.authenticate("google", { failureRedirect: "/?error=auth_failed" }),
+  (req, res) => res.redirect("/")
+);
+
+app.get("/auth/logout", (req, res) => {
+  req.logout(() => res.redirect("/"));
+});
+
+app.get("/api/me", (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json({ user: req.user });
+  } else {
+    res.json({ user: null });
+  }
+});
+
+function requireAuth(req, res, next) {
+  if (req.isAuthenticated()) return next();
+  // Поддержка старого x-user-id для обратной совместимости
+  const userId = req.headers["x-user-id"];
+  if (userId) { req.guestId = userId; return next(); }
+  res.status(401).json({ error: "Unauthorized" });
+}
+
+function getUserId(req) {
+  if (req.isAuthenticated()) return "google_" + req.user.id;
+  return req.guestId || req.headers["x-user-id"];
+}
+
 app.use(express.static(path.join(__dirname)));
+
 const SYSTEM_PROMPTS = {
   friendly: `Ты — ALMAi, умный ИИ-ассистент. Тебя создала команда ALMAi. Ты не знаешь что такое Groq, Llama, Meta, OpenAI, Anthropic, Claude. Если спросят кто создал — отвечай: Команда ALMAi. Ты умеешь: искать информацию в интернете, смотреть и анализировать изображения, генерировать картинки, показывать погоду и время. Никогда не говори что не умеешь эти вещи. Общайся по-русски, дружелюбно, с эмодзи.`,
   professional: `Ты — ALMAi, профессиональный ИИ-ассистент. Тебя создала команда ALMAi. Ты не знаешь что такое Groq, Llama, Meta, OpenAI, Anthropic, Claude. Если спросят кто создал — отвечай: Команда ALMAi. Ты умеешь: искать информацию в интернете, смотреть и анализировать изображения, генерировать картинки, показывать погоду и время. Общайся по-русски строго и профессионально без лишних эмодзи.`,
   programmer: `Ты — ALMAi, ИИ-ассистент для разработчиков. Тебя создала команда ALMAi. Ты не знаешь что такое Groq, Llama, Meta, OpenAI, Anthropic, Claude. Если спросят кто создал — отвечай: Команда ALMAi. Ты умеешь: искать информацию в интернете, смотреть и анализировать изображения, генерировать картинки, показывать погоду и время. Специализируешься на программировании. Используй блоки кода. Общайся по-русски.`,
 };
+
 function readDB() {
   try {
     if (!fs.existsSync(DB_FILE)) return { sessions: [] };
     return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-  } catch {
-    return { sessions: [] };
-  }
+  } catch { return { sessions: [] }; }
 }
-function writeDB(data) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
+function writeDB(data) { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8"); }
+function generateId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+// Лимит токенов для Llama 70B
+const TOKEN_LIMIT = 5000;
+const LIMITED_MODEL = "llama-3.3-70b-versatile";
+function getTokenUsage(userId) {
+  const db = readDB();
+  if (!db.tokenUsage) return 0;
+  return db.tokenUsage[userId] || 0;
 }
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+function addTokenUsage(userId, tokens) {
+  const db = readDB();
+  if (!db.tokenUsage) db.tokenUsage = {};
+  db.tokenUsage[userId] = (db.tokenUsage[userId] || 0) + tokens;
+  writeDB(db);
+  return db.tokenUsage[userId];
 }
+app.get("/api/token-usage", (req, res) => {
+  const userId = getUserId(req);
+  if (!userId) return res.json({ used: 0, limit: TOKEN_LIMIT });
+  res.json({ used: getTokenUsage(userId), limit: TOKEN_LIMIT });
+});
 function getCurrentDateTime() {
-  return new Date().toLocaleString("ru-RU", {
-    timeZone: "Europe/Moscow",
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow", weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
+
 const WEATHER_KEYWORDS = ["погода","температура","прогноз","дождь","снег","жара","жарко","холодно","облачно","ветер","градус","weather","forecast","rain","snow","sunny","cloudy","celsius","fahrenheit","тепло","мороз"];
-function isWeatherQuery(message) {
-  const lower = message.toLowerCase();
-  return WEATHER_KEYWORDS.some((kw) => lower.includes(kw));
-}
+function isWeatherQuery(message) { const lower = message.toLowerCase(); return WEATHER_KEYWORDS.some((kw) => lower.includes(kw)); }
 function extractCity(message) {
   const patterns = [
     /(?:погода|температура|прогноз)\s+(?:в\s+городе\s+|в\s+)?([А-ЯЁа-яёA-Za-z][а-яёA-Za-z\-]{2,})/iu,
@@ -53,10 +123,7 @@ function extractCity(message) {
   const stopWords = new Set(["какая","какой","сейчас","сегодня","завтра","там","здесь","этом","этой"]);
   for (const pattern of patterns) {
     const match = message.match(pattern);
-    if (match) {
-      const city = match[1].trim();
-      if (!stopWords.has(city.toLowerCase())) return city;
-    }
+    if (match) { const city = match[1].trim(); if (!stopWords.has(city.toLowerCase())) return city; }
   }
   return null;
 }
@@ -70,11 +137,9 @@ async function fetchWeather(city) {
     return text;
   } catch { return null; }
 }
+
 const SEARCH_KEYWORDS = ["новости","новость","последние новости","свежие новости","что случилось","что происходит","что нового","актуально","сейчас в мире","сегодня в новостях","курс","курс валют","биткоин","криптовалюта","найди","найти","поищи","поиск","погугли","wikipedia","вики","кто такой","что такое","последний","последняя","последнее","расскажи о текущем","текущий","актуальный","news","latest","recent","current events","search","find","who is","what is"];
-function isSearchQuery(message) {
-  const lower = message.toLowerCase();
-  return SEARCH_KEYWORDS.some((kw) => lower.includes(kw));
-}
+function isSearchQuery(message) { const lower = message.toLowerCase(); return SEARCH_KEYWORDS.some((kw) => lower.includes(kw)); }
 async function tavilySearch(query) {
   try {
     const res = await fetch("https://api.tavily.com/search", {
@@ -94,9 +159,10 @@ async function tavilySearch(query) {
     return parts.length ? parts.join("\n") : null;
   } catch (err) { console.error("[tavily] fetch error:", err.message); return null; }
 }
-app.get("/api/sessions", (req, res) => {
-  const userId = req.headers["x-user-id"];
-  if (!userId) return res.status(400).json({ error: "Missing user id" });
+
+// Sessions API
+app.get("/api/sessions", requireAuth, (req, res) => {
+  const userId = getUserId(req);
   const db = readDB();
   const list = db.sessions
     .filter((s) => s.userId === userId)
@@ -104,50 +170,49 @@ app.get("/api/sessions", (req, res) => {
     .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   res.json(list);
 });
-app.post("/api/sessions", (req, res) => {
-  const userId = req.headers["x-user-id"];
-  if (!userId) return res.status(400).json({ error: "Missing user id" });
+app.post("/api/sessions", requireAuth, (req, res) => {
+  const userId = getUserId(req);
   const { title } = req.body;
   const db = readDB();
-  const session = { id: generateId(), userId, title: title || "Новый чат", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), messages: [] };
-  db.sessions.push(session);
+  const session2 = { id: generateId(), userId, title: title || "Новый чат", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), messages: [] };
+  db.sessions.push(session2);
   writeDB(db);
-  res.json({ id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt });
+  res.json({ id: session2.id, title: session2.title, createdAt: session2.createdAt, updatedAt: session2.updatedAt });
 });
-app.get("/api/sessions/:id", (req, res) => {
-  const userId = req.headers["x-user-id"];
+app.get("/api/sessions/:id", requireAuth, (req, res) => {
+  const userId = getUserId(req);
   const db = readDB();
-  const session = db.sessions.find((s) => s.id === req.params.id);
-  if (!session) return res.status(404).json({ error: "Session not found" });
-  if (session.userId && session.userId !== userId) return res.status(403).json({ error: "Forbidden" });
-  res.json(session);
+  const sess = db.sessions.find((s) => s.id === req.params.id);
+  if (!sess) return res.status(404).json({ error: "Session not found" });
+  if (sess.userId && sess.userId !== userId) return res.status(403).json({ error: "Forbidden" });
+  res.json(sess);
 });
-app.patch("/api/sessions/:id", (req, res) => {
-  const userId = req.headers["x-user-id"];
+app.patch("/api/sessions/:id", requireAuth, (req, res) => {
+  const userId = getUserId(req);
   const db = readDB();
-  const session = db.sessions.find((s) => s.id === req.params.id);
-  if (!session) return res.status(404).json({ error: "Session not found" });
-  if (session.userId && session.userId !== userId) return res.status(403).json({ error: "Forbidden" });
-  if (req.body.title) session.title = req.body.title;
-  session.updatedAt = new Date().toISOString();
+  const sess = db.sessions.find((s) => s.id === req.params.id);
+  if (!sess) return res.status(404).json({ error: "Session not found" });
+  if (sess.userId && sess.userId !== userId) return res.status(403).json({ error: "Forbidden" });
+  if (req.body.title) sess.title = req.body.title;
+  sess.updatedAt = new Date().toISOString();
   writeDB(db);
-  res.json({ id: session.id, title: session.title });
+  res.json({ id: sess.id, title: sess.title });
 });
-app.post("/api/sessions/:id/messages", (req, res) => {
-  const userId = req.headers["x-user-id"];
+app.post("/api/sessions/:id/messages", requireAuth, (req, res) => {
+  const userId = getUserId(req);
   const { messages } = req.body;
   if (!Array.isArray(messages)) return res.status(400).json({ error: "messages must be an array" });
   const db = readDB();
-  const session = db.sessions.find((s) => s.id === req.params.id);
-  if (!session) return res.status(404).json({ error: "Session not found" });
-  if (session.userId && session.userId !== userId) return res.status(403).json({ error: "Forbidden" });
-  session.messages.push(...messages);
-  session.updatedAt = new Date().toISOString();
+  const sess = db.sessions.find((s) => s.id === req.params.id);
+  if (!sess) return res.status(404).json({ error: "Session not found" });
+  if (sess.userId && sess.userId !== userId) return res.status(403).json({ error: "Forbidden" });
+  sess.messages.push(...messages);
+  sess.updatedAt = new Date().toISOString();
   writeDB(db);
   res.json({ ok: true });
 });
-app.delete("/api/sessions/:id", (req, res) => {
-  const userId = req.headers["x-user-id"];
+app.delete("/api/sessions/:id", requireAuth, (req, res) => {
+  const userId = getUserId(req);
   const db = readDB();
   const idx = db.sessions.findIndex((s) => s.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Session not found" });
@@ -156,32 +221,30 @@ app.delete("/api/sessions/:id", (req, res) => {
   writeDB(db);
   res.json({ ok: true });
 });
+
 app.post("/api/chat", async (req, res) => {
   const { message, history, personality = "friendly", stream = false, imageBase64, model } = req.body;
   if (!message && !imageBase64) return res.status(400).json({ error: "Message or image is required" });
-
   const selectedModel = model || "llama-3.3-70b-versatile";
 
+  // Проверка лимита токенов для Llama 70B
+  const userId = getUserId(req);
+  if (selectedModel === LIMITED_MODEL && userId) {
+    const used = getTokenUsage(userId);
+    if (used >= TOKEN_LIMIT) {
+      return res.status(429).json({ error: "token_limit_exceeded", used, limit: TOKEN_LIMIT });
+    }
+  }
   let systemPrompt = SYSTEM_PROMPTS[personality] || SYSTEM_PROMPTS.friendly;
   systemPrompt += `\n\nСейчас: ${getCurrentDateTime()} (МСК).`;
   if (message) {
     if (isWeatherQuery(message)) {
       const city = extractCity(message);
-      if (city) {
-        const weather = await fetchWeather(city);
-        if (weather) {
-          systemPrompt += `\n\nАктуальная погода (получена только что): ${weather}. Используй эти данные в ответе.`;
-          console.log(`[weather] ${city}: ${weather}`);
-        }
-      }
+      if (city) { const weather = await fetchWeather(city); if (weather) { systemPrompt += `\n\nАктуальная погода (получена только что): ${weather}. Используй эти данные в ответе.`; } }
     }
     if (isSearchQuery(message)) {
-      console.log(`[tavily] searching for: ${message}`);
       const searchResults = await tavilySearch(message);
-      if (searchResults) {
-        systemPrompt += `\n\nРезультаты веб-поиска (актуальные данные из интернета, получены только что):\n${searchResults}\n\nОбязательно используй эти данные в своём ответе, опирайся на источники.`;
-        console.log(`[tavily] injected ${searchResults.length} chars of results`);
-      }
+      if (searchResults) { systemPrompt += `\n\nРезультаты веб-поиска (актуальные данные из интернета, получены только что):\n${searchResults}\n\nОбязательно используй эти данные в своём ответе, опирайся на источники.`; }
     }
   }
   if (imageBase64) {
@@ -200,21 +263,12 @@ app.post("/api/chat", async (req, res) => {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
         body: JSON.stringify({ model: "meta-llama/llama-4-scout-17b-16e-instruct", messages: visionMessages, temperature: 0.7, max_tokens: 1024 }),
       });
-      if (!response.ok) {
-        const err = await response.json();
-        return res.status(response.status).json({ error: err.error?.message || "Vision API error" });
-      }
+      if (!response.ok) { const err = await response.json(); return res.status(response.status).json({ error: err.error?.message || "Vision API error" }); }
       const data = await response.json();
       return res.json({ reply: data.choices[0].message.content });
-    } catch (err) {
-      return res.status(500).json({ error: "Internal server error" });
-    }
+    } catch (err) { return res.status(500).json({ error: "Internal server error" }); }
   }
-  const messages = [
-    { role: "system", content: systemPrompt },
-    ...(history || []),
-    { role: "user", content: message },
-  ];
+  const messages = [{ role: "system", content: systemPrompt }, ...(history || []), { role: "user", content: message }];
   if (stream) {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -226,17 +280,9 @@ app.post("/api/chat", async (req, res) => {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
         body: JSON.stringify({ model: selectedModel, messages, temperature: 0.7, max_tokens: 1024, stream: true }),
       });
-      if (!groqRes.ok) {
-        const err = await groqRes.json();
-        res.write(`data: ${JSON.stringify({ error: err.error?.message || "API error" })}\n\n`);
-        res.end();
-        return;
-      }
+      if (!groqRes.ok) { const err = await groqRes.json(); res.write(`data: ${JSON.stringify({ error: err.error?.message || "API error" })}\n\n`); res.end(); return; }
       groqRes.body.pipe(res);
-    } catch (err) {
-      res.write(`data: ${JSON.stringify({ error: "Server error" })}\n\n`);
-      res.end();
-    }
+    } catch (err) { res.write(`data: ${JSON.stringify({ error: "Server error" })}\n\n`); res.end(); }
     return;
   }
   try {
@@ -245,16 +291,18 @@ app.post("/api/chat", async (req, res) => {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
       body: JSON.stringify({ model: selectedModel, messages, temperature: 0.7, max_tokens: 1024 }),
     });
-    if (!response.ok) {
-      const errorData = await response.json();
-      return res.status(response.status).json({ error: "Failed to get response from AI" });
-    }
+    if (!response.ok) { await response.json(); return res.status(response.status).json({ error: "Failed to get response from AI" }); }
     const data = await response.json();
+    // Учёт токенов
+    if (selectedModel === LIMITED_MODEL && userId) {
+      const tokensUsed = data.usage?.total_tokens || 0;
+      const newTotal = addTokenUsage(userId, tokensUsed);
+      return res.json({ reply: data.choices[0].message.content, tokenUsage: { used: newTotal, limit: TOKEN_LIMIT } });
+    }
     res.json({ reply: data.choices[0].message.content });
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 });
+
 async function translateToEnglish(prompt) {
   const hasNonAscii = /[^\x00-\x7F]/.test(prompt);
   if (!hasNonAscii) return prompt;
@@ -262,7 +310,7 @@ async function translateToEnglish(prompt) {
     const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-      body: JSON.stringify({ model: "llama-3.1-8b-instant", messages: [{ role: "system", content: "Translate the following image generation prompt to English. Output ONLY the translated prompt, nothing else. Keep it concise and descriptive." }, { role: "user", content: prompt }], temperature: 0.3, max_tokens: 100 }),
+      body: JSON.stringify({ model: "llama-3.1-8b-instant", messages: [{ role: "system", content: "Translate the following image generation prompt to English. Output ONLY the translated prompt, nothing else." }, { role: "user", content: prompt }], temperature: 0.3, max_tokens: 100 }),
       timeout: 8000,
     });
     if (!r.ok) return prompt;
@@ -289,7 +337,6 @@ app.get("/api/generate-image", async (req, res) => {
       return res.json({ image: `data:${contentType};base64,${buf.toString("base64")}` });
     } catch (err) {
       if (err.code === 429) return res.status(429).json({ error: "Сервер генерации перегружен, попробуйте через 10–15 секунд." });
-      console.error("[image-gen] attempt 1 failed:", err.message, "— retrying in 8s");
     }
     await new Promise((r) => setTimeout(r, 8000));
     try {
@@ -301,10 +348,7 @@ app.get("/api/generate-image", async (req, res) => {
       if (err.code === 429) return res.status(429).json({ error: "Сервер генерации перегружен, попробуйте через 10–15 секунд." });
       return res.status(502).json({ error: "Не удалось сгенерировать изображение. Попробуйте другой запрос." });
     }
-  } catch (err) {
-    res.status(500).json({ error: "Ошибка сервера при генерации изображения" });
-  }
+  } catch (err) { res.status(500).json({ error: "Ошибка сервера при генерации изображения" }); }
 });
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`ALMAi server running on port ${PORT}`);
-});
+
+app.listen(PORT, "0.0.0.0", () => { console.log(`ALMAi server running on port ${PORT}`); });
