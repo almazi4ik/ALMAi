@@ -427,3 +427,94 @@ app.get("/api/generate-image", async (req, res) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => { console.log(`ALMAi server running on port ${PORT}`); });
+
+// ===== TELEGRAM BOT =====
+const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+if (TG_TOKEN) {
+  const TG_API = `https://api.telegram.org/bot${TG_TOKEN}`;
+  const tgUserHistory = {};
+
+  async function tgSend(chatId, text) {
+    await fetch(`${TG_API}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" })
+    });
+  }
+
+  async function tgSendPhoto(chatId, photoUrl, caption) {
+    await fetch(`${TG_API}/sendPhoto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, photo: photoUrl, caption })
+    });
+  }
+
+  async function processTgMessage(msg) {
+    const chatId = msg.chat.id;
+    const text = msg.text || "";
+    if (!text) return;
+    if (text === "/start") {
+      return tgSend(chatId, "Привет! Я ALMAi — умный ИИ-ассистент!\n\nМогу отвечать на вопросы, искать информацию, показывать погоду и генерировать картинки.\n\nПросто напиши мне что-нибудь! 😊");
+    }
+    if (text === "/reset") {
+      tgUserHistory[chatId] = [];
+      return tgSend(chatId, "🔄 История очищена!");
+    }
+    if (!tgUserHistory[chatId]) tgUserHistory[chatId] = [];
+    const imgMatch = text.match(/^(нарисуй|сгенерируй|создай картинку|рисуй)\s+(.+)/i);
+    if (imgMatch) {
+      await tgSend(chatId, "🎨 Генерирую...");
+      const prompt = imgMatch[2];
+      const englishPrompt = await translateToEnglish(prompt);
+      const seed = Math.floor(Math.random() * 999999);
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(englishPrompt)}?width=768&height=768&nologo=true&seed=${seed}&nofeed=true`;
+      try {
+        await tgSendPhoto(chatId, imageUrl, "🎨 " + prompt);
+      } catch {
+        await tgSend(chatId, "❌ Не удалось сгенерировать. Попробуй другой запрос.");
+      }
+      return;
+    }
+    const history = tgUserHistory[chatId].slice(-10);
+    let systemPrompt = SYSTEM_PROMPTS.friendly + "\n\nСейчас: " + getCurrentDateTime() + " (МСК).";
+    if (isWeatherQuery(text)) {
+      const city = extractCity(text);
+      if (city) { const weather = await fetchWeather(city); if (weather) systemPrompt += "\n\nАктуальная погода: " + weather; }
+    }
+    if (isSearchQuery(text)) {
+      const results = await tavilySearch(text);
+      if (results) systemPrompt += "\n\nРезультаты поиска:\n" + results;
+    }
+    const messages = [{ role: "system", content: systemPrompt }, ...history, { role: "user", content: text }];
+    try {
+      const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + process.env.GROQ_API_KEY },
+        body: JSON.stringify({ model: "llama-3.1-8b-instant", messages, temperature: 0.7, max_tokens: 1024 })
+      });
+      const data = await r.json();
+      const reply = data.choices?.[0]?.message?.content || "Не удалось получить ответ 😔";
+      tgUserHistory[chatId].push({ role: "user", content: text }, { role: "assistant", content: reply });
+      await tgSend(chatId, reply);
+    } catch (err) {
+      await tgSend(chatId, "❌ Ошибка сервера. Попробуй позже.");
+    }
+  }
+
+  let tgOffset = 0;
+  async function tgPoll() {
+    try {
+      const r = await fetch(TG_API + "/getUpdates?offset=" + tgOffset + "&timeout=10");
+      if (!r.ok) return;
+      const data = await r.json();
+      for (const update of data.result || []) {
+        tgOffset = update.update_id + 1;
+        if (update.message) await processTgMessage(update.message).catch(console.error);
+      }
+    } catch {}
+    setTimeout(tgPoll, 2000);
+  }
+  tgPoll();
+  console.log("Telegram bot started!");
+}
