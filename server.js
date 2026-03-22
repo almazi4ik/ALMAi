@@ -409,32 +409,38 @@ async function translateToEnglish(prompt) {
     return d.choices?.[0]?.message?.content?.trim() || prompt;
   } catch { return prompt; }
 }
-async function fetchPollinationsImage(englishPrompt) {
-  const seed = Math.floor(Math.random() * 1000000);
-  // Пробуем несколько моделей по очереди
-  const models = ["flux", "flux-realism", "turbo"];
+async function fetchHuggingFaceImage(englishPrompt) {
+  const HF_TOKEN = process.env.HF_TOKEN;
+  const models = [
+    "stabilityai/stable-diffusion-xl-base-1.0",
+    "runwayml/stable-diffusion-v1-5",
+    "prompthero/openjourney-v4"
+  ];
   for (const model of models) {
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(englishPrompt)}?width=768&height=768&nologo=true&seed=${seed}&model=${model}&nofeed=true`;
     try {
-      const r = await fetch(url, {
-        timeout: 60000,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0",
-          "Accept": "image/png,image/jpeg,image/*,*/*",
-          "Referer": "https://pollinations.ai/"
-        }
+      const headers = { "Content-Type": "application/json" };
+      if (HF_TOKEN) headers["Authorization"] = `Bearer ${HF_TOKEN}`;
+      let r = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
+        method: "POST", headers,
+        body: JSON.stringify({ inputs: englishPrompt }),
+        timeout: 60000
       });
-      if (r.status === 429) throw Object.assign(new Error("rate_limited"), { code: 429 });
-      if (!r.ok) continue;
+      if (r.status === 503) {
+        console.log(`[image] model ${model} loading, waiting 10s...`);
+        await new Promise(resolve => setTimeout(resolve, 10000));
+        r = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
+          method: "POST", headers,
+          body: JSON.stringify({ inputs: englishPrompt }),
+          timeout: 60000
+        });
+      }
+      if (!r.ok) { console.log(`[image] ${model} failed: ${r.status}`); continue; }
       const contentType = r.headers.get("content-type") || "";
       if (!contentType.includes("image")) continue;
-      const buf = await r.buffer();
-      if (buf.length < 1000) continue; // слишком маленький файл = ошибка
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length < 1000) continue;
       return { buf, contentType };
-    } catch (err) {
-      if (err.code === 429) throw err;
-      continue;
-    }
+    } catch (err) { console.log(`[image] ${model} error: ${err.message}`); continue; }
   }
   throw new Error("all models failed");
 }
@@ -444,25 +450,12 @@ app.get("/api/generate-image", async (req, res) => {
   try {
     const englishPrompt = await translateToEnglish(prompt);
     console.log(`[image] generating: ${englishPrompt}`);
-    try {
-      const { buf, contentType } = await fetchPollinationsImage(englishPrompt);
-      console.log(`[image] success: ${buf.length} bytes`);
-      return res.json({ image: `data:${contentType};base64,${buf.toString("base64")}` });
-    } catch (err) {
-      if (err.code === 429) return res.status(429).json({ error: "Сервер генерации перегружен, попробуйте через 10–15 секунд." });
-      console.log("[image] attempt 1 failed, retrying in 5s...");
-    }
-    await new Promise((r) => setTimeout(r, 5000));
-    try {
-      const { buf, contentType } = await fetchPollinationsImage(englishPrompt);
-      return res.json({ image: `data:${contentType};base64,${buf.toString("base64")}` });
-    } catch (err) {
-      if (err.code === 429) return res.status(429).json({ error: "Сервер генерации перегружен, попробуйте через 10–15 секунд." });
-      return res.status(502).json({ error: "Не удалось сгенерировать изображение. Попробуйте другой запрос или подождите немного." });
-    }
+    const { buf, contentType } = await fetchHuggingFaceImage(englishPrompt);
+    console.log(`[image] success: ${buf.length} bytes`);
+    return res.json({ image: `data:${contentType};base64,${buf.toString("base64")}` });
   } catch (err) {
     console.error("[image] error:", err.message);
-    res.status(500).json({ error: "Ошибка сервера при генерации изображения" });
+    res.status(502).json({ error: "Не удалось сгенерировать изображение. Попробуйте другой запрос или подождите немного." });
   }
 });
 
