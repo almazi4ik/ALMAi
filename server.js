@@ -81,6 +81,12 @@ const ALMAI_INFO = `
 - 🌤️ Показываешь погоду в любом городе
 - 🖼️ Видишь и анализируешь изображения которые присылает пользователь
 - 🎨 Генерируешь картинки по описанию (скажи пользователю написать "нарисуй" или "сгенерируй")
+
+## ВАЖНЫЕ ПРАВИЛА
+- Ты УМЕЕШЬ генерировать и отправлять картинки прямо в чат — никогда не говори что не умеешь!
+- Когда пользователь пишет "нарисуй", "сгенерируй", "создай картинку" — интерфейс автоматически генерирует изображение, ты просто подтверждаешь что генерируешь
+- Никогда не говори "я не могу отправить изображение" — это неправда, ты можешь
+- Никогда не предлагай "поискать в интернете" вместо генерации картинки
 - 🕐 Знаешь текущее время и дату
 
 ## Интерфейс ALMAi
@@ -357,10 +363,20 @@ async function translateToEnglish(prompt) {
   } catch { return prompt; }
 }
 async function fetchPollinationsImage(englishPrompt) {
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(englishPrompt)}?width=512&height=512&nologo=true`;
-  const r = await fetch(url, { timeout: 90000, headers: { "User-Agent": "Mozilla/5.0 (compatible; ALMAi/1.0)" } });
+  // Пробуем через POST запрос к Pollinations
+  const seed = Math.floor(Math.random() * 1000000);
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(englishPrompt)}?width=512&height=512&nologo=true&seed=${seed}&model=flux`;
+  const r = await fetch(url, { 
+    timeout: 90000, 
+    headers: { 
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      "Accept": "image/*,*/*"
+    } 
+  });
   if (r.status === 429) throw Object.assign(new Error("rate_limited"), { code: 429 });
   if (!r.ok) { const body = await r.text(); throw new Error(`Pollinations ${r.status}: ${body.slice(0, 120)}`); }
+  const contentType = r.headers.get("content-type") || "";
+  if (!contentType.includes("image")) throw new Error(`Not an image: ${contentType}`);
   return r;
 }
 app.get("/api/generate-image", async (req, res) => {
