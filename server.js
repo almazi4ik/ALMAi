@@ -83,10 +83,12 @@ const ALMAI_INFO = `
 - 🎨 Генерируешь картинки по описанию (скажи пользователю написать "нарисуй" или "сгенерируй")
 
 ## ВАЖНЫЕ ПРАВИЛА
-- Ты УМЕЕШЬ генерировать и отправлять картинки прямо в чат — никогда не говори что не умеешь!
-- Когда пользователь пишет "нарисуй", "сгенерируй", "создай картинку" — интерфейс автоматически генерирует изображение, ты просто подтверждаешь что генерируешь
-- Никогда не говори "я не могу отправить изображение" — это неправда, ты можешь
-- Никогда не предлагай "поискать в интернете" вместо генерации картинки
+- Ты УМЕЕШЬ генерировать и отправлять картинки прямо в чат — НИКОГДА не говори что не умеешь!
+- Когда пользователь пишет "нарисуй", "сгенерируй", "создай картинку", "рисуй" — просто скажи "Генерирую! 🎨" и жди — интерфейс сам покажет картинку
+- НИКОГДА не пиши "не могу отправить изображение напрямую" — это ЛОЖЬ
+- НИКОГДА не описывай картинку словами вместо генерации
+- НИКОГДА не предлагай "поискать в интернете" вместо генерации
+- Если генерация не удалась — скажи честно "Не получилось сгенерировать, попробуй другой запрос 😔" и больше ничего
 - 🕐 Знаешь текущее время и дату
 
 ## Интерфейс ALMAi
@@ -363,46 +365,60 @@ async function translateToEnglish(prompt) {
   } catch { return prompt; }
 }
 async function fetchPollinationsImage(englishPrompt) {
-  // Пробуем через POST запрос к Pollinations
   const seed = Math.floor(Math.random() * 1000000);
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(englishPrompt)}?width=512&height=512&nologo=true&seed=${seed}&model=flux`;
-  const r = await fetch(url, { 
-    timeout: 90000, 
-    headers: { 
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      "Accept": "image/*,*/*"
-    } 
-  });
-  if (r.status === 429) throw Object.assign(new Error("rate_limited"), { code: 429 });
-  if (!r.ok) { const body = await r.text(); throw new Error(`Pollinations ${r.status}: ${body.slice(0, 120)}`); }
-  const contentType = r.headers.get("content-type") || "";
-  if (!contentType.includes("image")) throw new Error(`Not an image: ${contentType}`);
-  return r;
+  // Пробуем несколько моделей по очереди
+  const models = ["flux", "flux-realism", "turbo"];
+  for (const model of models) {
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(englishPrompt)}?width=768&height=768&nologo=true&seed=${seed}&model=${model}&nofeed=true`;
+    try {
+      const r = await fetch(url, {
+        timeout: 60000,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0",
+          "Accept": "image/png,image/jpeg,image/*,*/*",
+          "Referer": "https://pollinations.ai/"
+        }
+      });
+      if (r.status === 429) throw Object.assign(new Error("rate_limited"), { code: 429 });
+      if (!r.ok) continue;
+      const contentType = r.headers.get("content-type") || "";
+      if (!contentType.includes("image")) continue;
+      const buf = await r.buffer();
+      if (buf.length < 1000) continue; // слишком маленький файл = ошибка
+      return { buf, contentType };
+    } catch (err) {
+      if (err.code === 429) throw err;
+      continue;
+    }
+  }
+  throw new Error("all models failed");
 }
 app.get("/api/generate-image", async (req, res) => {
   const { prompt } = req.query;
   if (!prompt) return res.status(400).json({ error: "prompt is required" });
   try {
     const englishPrompt = await translateToEnglish(prompt);
+    console.log(`[image] generating: ${englishPrompt}`);
     try {
-      const imgRes = await fetchPollinationsImage(englishPrompt);
-      const buf = await imgRes.buffer();
-      const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+      const { buf, contentType } = await fetchPollinationsImage(englishPrompt);
+      console.log(`[image] success: ${buf.length} bytes`);
       return res.json({ image: `data:${contentType};base64,${buf.toString("base64")}` });
     } catch (err) {
       if (err.code === 429) return res.status(429).json({ error: "Сервер генерации перегружен, попробуйте через 10–15 секунд." });
+      console.log("[image] attempt 1 failed, retrying in 5s...");
     }
-    await new Promise((r) => setTimeout(r, 8000));
+    await new Promise((r) => setTimeout(r, 5000));
     try {
-      const imgRes = await fetchPollinationsImage(englishPrompt);
-      const buf = await imgRes.buffer();
-      const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+      const { buf, contentType } = await fetchPollinationsImage(englishPrompt);
       return res.json({ image: `data:${contentType};base64,${buf.toString("base64")}` });
     } catch (err) {
       if (err.code === 429) return res.status(429).json({ error: "Сервер генерации перегружен, попробуйте через 10–15 секунд." });
-      return res.status(502).json({ error: "Не удалось сгенерировать изображение. Попробуйте другой запрос." });
+      return res.status(502).json({ error: "Не удалось сгенерировать изображение. Попробуйте другой запрос или подождите немного." });
     }
-  } catch (err) { res.status(500).json({ error: "Ошибка сервера при генерации изображения" }); }
+  } catch (err) {
+    console.error("[image] error:", err.message);
+    res.status(500).json({ error: "Ошибка сервера при генерации изображения" });
+  }
 });
 
 app.listen(PORT, "0.0.0.0", () => { console.log(`ALMAi server running on port ${PORT}`); });
