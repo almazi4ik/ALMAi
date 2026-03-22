@@ -461,6 +461,37 @@ if (TG_TOKEN) {
       tgUserHistory[chatId] = [];
       return tgSend(chatId, "🔄 История очищена!");
     }
+    if (text === "/joke") {
+      const jokePrompt = [{ role: "system", content: "Ты генератор шуток. Расскажи одну смешную короткую шутку на русском языке. Только шутку, без лишних слов." }, { role: "user", content: "расскажи шутку" }];
+      try {
+        const r = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + process.env.GROQ_API_KEY }, body: JSON.stringify({ model: "llama-3.1-8b-instant", messages: jokePrompt, temperature: 1.0, max_tokens: 200 }) });
+        const d = await r.json();
+        return tgSend(chatId, "😂 " + (d.choices?.[0]?.message?.content || "Не смог придумать шутку 😔"));
+      } catch { return tgSend(chatId, "😔 Не удалось получить шутку. Попробуй позже!"); }
+    }
+    if (text === "/random") {
+      const factPrompt = [{ role: "system", content: "Ты генератор интересных фактов. Расскажи один интересный и неожиданный факт на русском языке. Только факт, без лишних слов." }, { role: "user", content: "интересный факт" }];
+      try {
+        const r = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + process.env.GROQ_API_KEY }, body: JSON.stringify({ model: "llama-3.1-8b-instant", messages: factPrompt, temperature: 1.0, max_tokens: 200 }) });
+        const d = await r.json();
+        return tgSend(chatId, "🎲 " + (d.choices?.[0]?.message?.content || "Не смог придумать факт 😔"));
+      } catch { return tgSend(chatId, "😔 Не удалось получить факт. Попробуй позже!"); }
+    }
+    if (text.startsWith("/weather")) {
+      const city = text.replace("/weather", "").trim() || "Kyiv";
+      const weather = await fetchWeather(city);
+      return tgSend(chatId, weather ? "🌤️ " + weather : "❌ Не удалось получить погоду для " + city);
+    }
+    if (text === "/stats") {
+      const totalUsers = Object.keys(tgUserHistory).length;
+      const totalMessages = Object.values(tgUserHistory).reduce((sum, h) => sum + h.length, 0);
+      return tgSend(chatId, `📊 *Статистика ALMAi бота*
+
+👥 Пользователей: ${totalUsers}
+💬 Сообщений обработано: ${totalMessages}
+🤖 Статус: работаю!
+🌐 Сайт: https://almai-6go8.onrender.com`);
+    }
     if (!tgUserHistory[chatId]) tgUserHistory[chatId] = [];
     const imgMatch = text.match(/^(нарисуй|сгенерируй|создай картинку|рисуй)\s+(.+)/i);
     if (imgMatch) {
