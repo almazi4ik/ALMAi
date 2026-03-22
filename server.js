@@ -414,13 +414,42 @@ app.get("/api/generate-image", async (req, res) => {
   if (!prompt) return res.status(400).json({ error: "prompt is required" });
   try {
     const englishPrompt = await translateToEnglish(prompt);
-    const seed = Math.floor(Math.random() * 999999);
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(englishPrompt)}?width=768&height=768&nologo=true&seed=${seed}&nofeed=true`;
-    console.log(`[image] url: ${url}`);
-    return res.json({ imageUrl: url });
+    console.log(`[image] generating: ${englishPrompt}`);
+    const jobRes = await fetch("https://api.prodia.com/v1/sd/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Prodia-Key": "actually-free" },
+      body: JSON.stringify({
+        model: "dreamshaper_8.safetensors [9d40847d]",
+        prompt: englishPrompt,
+        negative_prompt: "blurry, ugly, bad quality",
+        steps: 20, cfg_scale: 7, width: 768, height: 768,
+        sampler: "DPM++ 2M Karras"
+      })
+    });
+    if (!jobRes.ok) throw new Error(`Prodia job failed: ${jobRes.status}`);
+    const job = await jobRes.json();
+    const jobId = job.job;
+    console.log(`[image] job created: ${jobId}`);
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      const statusRes = await fetch(`https://api.prodia.com/v1/job/${jobId}`, {
+        headers: { "X-Prodia-Key": "actually-free" }
+      });
+      const status = await statusRes.json();
+      console.log(`[image] status: ${status.status}`);
+      if (status.status === "succeeded") {
+        const imgRes = await fetch(status.imageUrl);
+        const buf = Buffer.from(await imgRes.arrayBuffer());
+        const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+        console.log(`[image] success: ${buf.length} bytes`);
+        return res.json({ image: `data:${contentType};base64,${buf.toString("base64")}` });
+      }
+      if (status.status === "failed") throw new Error("Prodia generation failed");
+    }
+    throw new Error("timeout");
   } catch (err) {
     console.error("[image] error:", err.message);
-    res.status(500).json({ error: "Ошибка сервера" });
+    res.status(502).json({ error: "Не удалось сгенерировать изображение. Попробуйте ещё раз 😔" });
   }
 });
 
