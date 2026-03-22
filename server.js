@@ -477,7 +477,8 @@ if (TG_TOKEN) {
       return;
     }
     const history = tgUserHistory[chatId].slice(-10);
-    let systemPrompt = SYSTEM_PROMPTS.friendly + "\n\nСейчас: " + getCurrentDateTime() + " (МСК).";
+    let systemPrompt = SYSTEM_PROMPTS.friendly + "\n\nСейчас: " + getCurrentDateTime() + " (МСК)." +
+      "\n\n## Телеграм\nТы работаешь в Телеграме. Твой юзернейм: @almaiialaishhs_bot. Ты знаешь что существуешь и в Телеграме и на сайте https://almai-6go8.onrender.com. В Телеграме нет визуального интерфейса — только текст и картинки.";
     if (isWeatherQuery(text)) {
       const city = extractCity(text);
       if (city) { const weather = await fetchWeather(city); if (weather) systemPrompt += "\n\nАктуальная погода: " + weather; }
