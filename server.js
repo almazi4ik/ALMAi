@@ -433,6 +433,11 @@ const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 if (TG_TOKEN) {
   const TG_API = `https://api.telegram.org/bot${TG_TOKEN}`;
   const tgUserHistory = {};
+  const tgUserSettings = {}; // { chatId: { model, personality } }
+  function getTgSettings(chatId) {
+    if (!tgUserSettings[chatId]) tgUserSettings[chatId] = { model: "llama-3.1-8b-instant", personality: "friendly" };
+    return tgUserSettings[chatId];
+  }
 
   async function tgSend(chatId, text) {
     await fetch(`${TG_API}/sendMessage`, {
@@ -493,6 +498,45 @@ if (TG_TOKEN) {
 🌐 Сайт: https://almai-6go8.onrender.com`);
     }
     if (!tgUserHistory[chatId]) tgUserHistory[chatId] = [];
+    const settings = getTgSettings(chatId);
+    if (text === "/model") {
+      return tgSend(chatId, `🤖 *Выбор модели*
+
+Текущая: *${settings.model}*
+
+Ответь номером:
+1️⃣ Llama 70B (умная, медленнее)
+2️⃣ Llama 8B (быстрая)
+3️⃣ Mixtral (мощная)
+4️⃣ Gemma 2 (от Google)
+
+Напиши: /setmodel 1`);
+    }
+    if (text.startsWith("/setmodel")) {
+      const num = text.replace("/setmodel", "").trim();
+      const models = { "1": "llama-3.3-70b-versatile", "2": "llama-3.1-8b-instant", "3": "mixtral-8x7b-32768", "4": "gemma2-9b-it" };
+      const names = { "1": "Llama 70B", "2": "Llama 8B", "3": "Mixtral", "4": "Gemma 2" };
+      if (models[num]) { settings.model = models[num]; return tgSend(chatId, "✅ Модель изменена на *" + names[num] + "*!"); }
+      return tgSend(chatId, "❌ Напиши /setmodel 1, /setmodel 2, /setmodel 3 или /setmodel 4");
+    }
+    if (text === "/mode") {
+      return tgSend(chatId, `🎭 *Выбор режима*
+
+Текущий: *${settings.personality}*
+
+1️⃣ Дружелюбный 😊
+2️⃣ Профессионал 💼
+3️⃣ Программист 💻
+
+Напиши: /setmode 1`);
+    }
+    if (text.startsWith("/setmode")) {
+      const num = text.replace("/setmode", "").trim();
+      const modes = { "1": "friendly", "2": "professional", "3": "programmer" };
+      const names = { "1": "Дружелюбный 😊", "2": "Профессионал 💼", "3": "Программист 💻" };
+      if (modes[num]) { settings.personality = modes[num]; return tgSend(chatId, "✅ Режим изменён на *" + names[num] + "*!"); }
+      return tgSend(chatId, "❌ Напиши /setmode 1, /setmode 2 или /setmode 3");
+    }
     const imgMatch = text.match(/^(нарисуй|сгенерируй|создай картинку|рисуй)\s+(.+)/i);
     if (imgMatch) {
       await tgSend(chatId, "🎨 Генерирую...");
@@ -508,7 +552,7 @@ if (TG_TOKEN) {
       return;
     }
     const history = tgUserHistory[chatId].slice(-10);
-    let systemPrompt = SYSTEM_PROMPTS.friendly + "\n\nСейчас: " + getCurrentDateTime() + " (МСК)." +
+    let systemPrompt = (SYSTEM_PROMPTS[settings.personality] || SYSTEM_PROMPTS.friendly) + "\n\nСейчас: " + getCurrentDateTime() + " (МСК)." +
       "\n\n## Телеграм\nТы работаешь в Телеграме. Твой юзернейм: @almaiialaishhs_bot. Ты знаешь что существуешь и в Телеграме и на сайте https://almai-6go8.onrender.com. В Телеграме нет визуального интерфейса — только текст и картинки.";
     if (isWeatherQuery(text)) {
       const city = extractCity(text);
@@ -523,7 +567,7 @@ if (TG_TOKEN) {
       const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + process.env.GROQ_API_KEY },
-        body: JSON.stringify({ model: "llama-3.1-8b-instant", messages, temperature: 0.7, max_tokens: 1024 })
+        body: JSON.stringify({ model: settings.model, messages, temperature: 0.7, max_tokens: 1024 })
       });
       const data = await r.json();
       const reply = data.choices?.[0]?.message?.content || "Не удалось получить ответ 😔";
