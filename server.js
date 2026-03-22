@@ -95,48 +95,63 @@ async function tavilySearch(query) {
   } catch (err) { console.error("[tavily] fetch error:", err.message); return null; }
 }
 app.get("/api/sessions", (req, res) => {
+  const userId = req.headers["x-user-id"];
+  if (!userId) return res.status(400).json({ error: "Missing user id" });
   const db = readDB();
-  const list = db.sessions.map((s) => ({ id: s.id, title: s.title, createdAt: s.createdAt, updatedAt: s.updatedAt, messageCount: s.messages.length })).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  const list = db.sessions
+    .filter((s) => s.userId === userId)
+    .map((s) => ({ id: s.id, title: s.title, createdAt: s.createdAt, updatedAt: s.updatedAt, messageCount: s.messages.length }))
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   res.json(list);
 });
 app.post("/api/sessions", (req, res) => {
+  const userId = req.headers["x-user-id"];
+  if (!userId) return res.status(400).json({ error: "Missing user id" });
   const { title } = req.body;
   const db = readDB();
-  const session = { id: generateId(), title: title || "Новый чат", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), messages: [] };
+  const session = { id: generateId(), userId, title: title || "Новый чат", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), messages: [] };
   db.sessions.push(session);
   writeDB(db);
   res.json({ id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt });
 });
 app.get("/api/sessions/:id", (req, res) => {
+  const userId = req.headers["x-user-id"];
   const db = readDB();
   const session = db.sessions.find((s) => s.id === req.params.id);
   if (!session) return res.status(404).json({ error: "Session not found" });
+  if (session.userId && session.userId !== userId) return res.status(403).json({ error: "Forbidden" });
   res.json(session);
 });
 app.patch("/api/sessions/:id", (req, res) => {
+  const userId = req.headers["x-user-id"];
   const db = readDB();
   const session = db.sessions.find((s) => s.id === req.params.id);
   if (!session) return res.status(404).json({ error: "Session not found" });
+  if (session.userId && session.userId !== userId) return res.status(403).json({ error: "Forbidden" });
   if (req.body.title) session.title = req.body.title;
   session.updatedAt = new Date().toISOString();
   writeDB(db);
   res.json({ id: session.id, title: session.title });
 });
 app.post("/api/sessions/:id/messages", (req, res) => {
+  const userId = req.headers["x-user-id"];
   const { messages } = req.body;
   if (!Array.isArray(messages)) return res.status(400).json({ error: "messages must be an array" });
   const db = readDB();
   const session = db.sessions.find((s) => s.id === req.params.id);
   if (!session) return res.status(404).json({ error: "Session not found" });
+  if (session.userId && session.userId !== userId) return res.status(403).json({ error: "Forbidden" });
   session.messages.push(...messages);
   session.updatedAt = new Date().toISOString();
   writeDB(db);
   res.json({ ok: true });
 });
 app.delete("/api/sessions/:id", (req, res) => {
+  const userId = req.headers["x-user-id"];
   const db = readDB();
   const idx = db.sessions.findIndex((s) => s.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Session not found" });
+  if (db.sessions[idx].userId && db.sessions[idx].userId !== userId) return res.status(403).json({ error: "Forbidden" });
   db.sessions.splice(idx, 1);
   writeDB(db);
   res.json({ ok: true });
