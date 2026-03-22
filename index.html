@@ -522,6 +522,7 @@
   const $title = document.getElementById('topbarTitle');
   const $theme = document.getElementById('themeBtn');
 
+  let userId = localStorage.getItem('almai_user_id'); if (!userId) { userId = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2,9); localStorage.setItem('almai_user_id', userId); }
   let sessionId = null, convo = [], memories = [], loading = false;
   let sessions = [], personality = 'friendly', isDark = true;
   let pendingImage = null;
@@ -609,7 +610,7 @@
 
   async function loadSessions(){
     try{
-      sessions=await(await fetch('/api/sessions')).json();
+      sessions=await(await fetch('/api/sessions',{headers:{'x-user-id':userId}})).json();
       renderSidebar();
     }catch{$hist.innerHTML='<div class="history-empty"><span class="hi-emoji">😔</span>Не удалось загрузить историю</div>';}
   }
@@ -638,7 +639,7 @@
 
   async function loadSession(id){
     if(id===sessionId||loading)return;
-    const res=await fetch(`/api/sessions/${id}`);
+    const res=await fetch(`/api/sessions/${id}`,{headers:{'x-user-id':userId}});
     if(!res.ok)return;
     const s=await res.json();
     sessionId=id; convo=s.messages.map(m=>({role:m.role,content:m.content}));
@@ -651,7 +652,7 @@
 
   async function delSession(e,id){
     e.stopPropagation();
-    await fetch(`/api/sessions/${id}`,{method:'DELETE'});
+    await fetch(`/api/sessions/${id}`,{method:'DELETE',headers:{'x-user-id':userId}});
     sessions=sessions.filter(s=>s.id!==id);
     if(sessionId===id){sessionId=null;convo=[];memories=[];renderMem();$msg.innerHTML='';$title.textContent='💬 ALMAi Chat';renderWelcome();}
     renderSidebar();
@@ -738,7 +739,7 @@
     const sessionTitle=(text||'Изображение').slice(0,50)+((text&&text.length>50)?'…':'');
     if(!sessionId){
       try{
-        const s=await(await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},
+        const s=await(await fetch('/api/sessions',{method:'POST',headers:{'Content-Type':'application/json','x-user-id':userId},
           body:JSON.stringify({title:sessionTitle})})).json();
         sessionId=s.id; sessions.unshift(s); renderSidebar(); setActive(sessionId);
         $title.textContent='💬 '+s.title;
@@ -776,7 +777,7 @@
           const saved=`🎨 Сгенерированное изображение: ${prompt}`;
           convo.push({role:'assistant',content:saved});
           if(sessionId){
-            fetch(`/api/sessions/${sessionId}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},
+            fetch(`/api/sessions/${sessionId}/messages`,{method:'POST',headers:{'Content-Type':'application/json','x-user-id':userId},
               body:JSON.stringify({messages:[{role:'assistant',content:saved,timestamp:aiTs}]})});
             const idx=sessions.findIndex(s=>s.id===sessionId);
             if(idx!==-1){sessions[idx].updatedAt=aiTs;sessions.sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));renderSidebar();setActive(sessionId);}
@@ -801,7 +802,7 @@
         renderMsg('ai',full,aiTs);
         convo.push({role:'assistant',content:full});
         if(sessionId&&full){
-          await fetch(`/api/sessions/${sessionId}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},
+          await fetch(`/api/sessions/${sessionId}/messages`,{method:'POST',headers:{'Content-Type':'application/json','x-user-id':userId},
             body:JSON.stringify({messages:[{role:'user',content:text||'🖼️ Изображение',timestamp:userTs},{role:'assistant',content:full,timestamp:aiTs}]})});
           const idx=sessions.findIndex(s=>s.id===sessionId);
           if(idx!==-1){sessions[idx].updatedAt=aiTs;sessions.sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));renderSidebar();setActive(sessionId);}
@@ -859,7 +860,7 @@
       const aiTs=new Date().toISOString();
       convo.push({role:'assistant',content:full});
       if(sessionId&&full){
-        await fetch(`/api/sessions/${sessionId}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},
+        await fetch(`/api/sessions/${sessionId}/messages`,{method:'POST',headers:{'Content-Type':'application/json','x-user-id':userId},
           body:JSON.stringify({messages:[{role:'user',content:text,timestamp:userTs},{role:'assistant',content:full,timestamp:aiTs}]})});
         const idx=sessions.findIndex(s=>s.id===sessionId);
         if(idx!==-1){sessions[idx].updatedAt=aiTs;sessions.sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt));renderSidebar();setActive(sessionId);}
