@@ -123,34 +123,79 @@ const SYSTEM_PROMPTS = {
   programmer: `${ALMAI_INFO}\n\n## Стиль общения\nОбщайся по-русски. Специализируешься на программировании и технических вопросах. Всегда используй блоки кода с указанием языка. Объясняй технически точно.`,
 };
 
-function readDB() {
+const JSONBIN_KEY = process.env.JSONBIN_KEY;
+const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID; // создаётся автоматически при первом запуске
+let dbCache = null; // кэш чтобы не дёргать API каждый раз
+
+async function readDB() {
+  if (dbCache) return dbCache;
   try {
-    if (!fs.existsSync(DB_FILE)) return { sessions: [] };
-    return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-  } catch { return { sessions: [] }; }
+    const binId = process.env.JSONBIN_BIN_ID;
+    if (!binId) return { sessions: [], tokenUsage: {} };
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY }
+    });
+    if (!res.ok) return { sessions: [], tokenUsage: {} };
+    const data = await res.json();
+    dbCache = data.record || { sessions: [], tokenUsage: {} };
+    return dbCache;
+  } catch { return { sessions: [], tokenUsage: {} }; }
 }
-function writeDB(data) { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8"); }
+
+async function writeDB(data) {
+  dbCache = data;
+  try {
+    let binId = process.env.JSONBIN_BIN_ID;
+    if (!binId) {
+      // Создаём новый bin при первом запуске
+      const res = await fetch("https://api.jsonbin.io/v3/b", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Master-Key": JSONBIN_KEY,
+          "X-Bin-Name": "almai-chats",
+          "X-Bin-Private": "true"
+        },
+        body: JSON.stringify(data)
+      });
+      const created = await res.json();
+      binId = created.metadata?.id;
+      console.log(`[jsonbin] Created new bin: ${binId} — добавь JSONBIN_BIN_ID=${binId} в Render!`);
+      return;
+    }
+    await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": JSONBIN_KEY
+      },
+      body: JSON.stringify(data)
+    });
+  } catch (err) { console.error("[jsonbin] write error:", err.message); }
+}
 function generateId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
 // Лимит токенов для Llama 70B
 const TOKEN_LIMIT = 5000;
 const LIMITED_MODEL = "llama-3.3-70b-versatile";
-function getTokenUsage(userId) {
-  const db = readDB();
+async function getTokenUsage(userId) {
+  const db = await readDB();
   if (!db.tokenUsage) return 0;
   return db.tokenUsage[userId] || 0;
 }
-function addTokenUsage(userId, tokens) {
-  const db = readDB();
+async function addTokenUsage(userId, tokens) {
+  const db = await readDB();
   if (!db.tokenUsage) db.tokenUsage = {};
   db.tokenUsage[userId] = (db.tokenUsage[userId] || 0) + tokens;
-  writeDB(db);
+  dbCache = db;
+  await writeDB(db);
   return db.tokenUsage[userId];
 }
-app.get("/api/token-usage", (req, res) => {
+app.get("/api/token-usage", async (req, res) => {
   const userId = getUserId(req);
   if (!userId) return res.json({ used: 0, limit: TOKEN_LIMIT });
-  res.json({ used: getTokenUsage(userId), limit: TOKEN_LIMIT });
+  const used = await getTokenUsage(userId);
+  res.json({ used, limit: TOKEN_LIMIT });
 });
 function getCurrentDateTime() {
   return new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow", weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -209,7 +254,7 @@ async function tavilySearch(query) {
 // Sessions API
 app.get("/api/sessions", requireAuth, (req, res) => {
   const userId = getUserId(req);
-  const db = readDB();
+  const db = await readDB();
   const list = db.sessions
     .filter((s) => s.userId === userId)
     .map((s) => ({ id: s.id, title: s.title, createdAt: s.createdAt, updatedAt: s.updatedAt, messageCount: s.messages.length }))
@@ -219,15 +264,15 @@ app.get("/api/sessions", requireAuth, (req, res) => {
 app.post("/api/sessions", requireAuth, (req, res) => {
   const userId = getUserId(req);
   const { title } = req.body;
-  const db = readDB();
+  const db = await readDB();
   const session2 = { id: generateId(), userId, title: title || "Новый чат", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), messages: [] };
   db.sessions.push(session2);
-  writeDB(db);
+  await writeDB(db);
   res.json({ id: session2.id, title: session2.title, createdAt: session2.createdAt, updatedAt: session2.updatedAt });
 });
 app.get("/api/sessions/:id", requireAuth, (req, res) => {
   const userId = getUserId(req);
-  const db = readDB();
+  const db = await readDB();
   const sess = db.sessions.find((s) => s.id === req.params.id);
   if (!sess) return res.status(404).json({ error: "Session not found" });
   if (sess.userId && sess.userId !== userId) return res.status(403).json({ error: "Forbidden" });
@@ -235,36 +280,36 @@ app.get("/api/sessions/:id", requireAuth, (req, res) => {
 });
 app.patch("/api/sessions/:id", requireAuth, (req, res) => {
   const userId = getUserId(req);
-  const db = readDB();
+  const db = await readDB();
   const sess = db.sessions.find((s) => s.id === req.params.id);
   if (!sess) return res.status(404).json({ error: "Session not found" });
   if (sess.userId && sess.userId !== userId) return res.status(403).json({ error: "Forbidden" });
   if (req.body.title) sess.title = req.body.title;
   sess.updatedAt = new Date().toISOString();
-  writeDB(db);
+  await writeDB(db);
   res.json({ id: sess.id, title: sess.title });
 });
 app.post("/api/sessions/:id/messages", requireAuth, (req, res) => {
   const userId = getUserId(req);
   const { messages } = req.body;
   if (!Array.isArray(messages)) return res.status(400).json({ error: "messages must be an array" });
-  const db = readDB();
+  const db = await readDB();
   const sess = db.sessions.find((s) => s.id === req.params.id);
   if (!sess) return res.status(404).json({ error: "Session not found" });
   if (sess.userId && sess.userId !== userId) return res.status(403).json({ error: "Forbidden" });
   sess.messages.push(...messages);
   sess.updatedAt = new Date().toISOString();
-  writeDB(db);
+  await writeDB(db);
   res.json({ ok: true });
 });
 app.delete("/api/sessions/:id", requireAuth, (req, res) => {
   const userId = getUserId(req);
-  const db = readDB();
+  const db = await readDB();
   const idx = db.sessions.findIndex((s) => s.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Session not found" });
   if (db.sessions[idx].userId && db.sessions[idx].userId !== userId) return res.status(403).json({ error: "Forbidden" });
   db.sessions.splice(idx, 1);
-  writeDB(db);
+  await writeDB(db);
   res.json({ ok: true });
 });
 
@@ -276,7 +321,7 @@ app.post("/api/chat", async (req, res) => {
   // Проверка лимита токенов для Llama 70B
   const userId = getUserId(req);
   if (selectedModel === LIMITED_MODEL && userId) {
-    const used = getTokenUsage(userId);
+    const used = await getTokenUsage(userId);
     if (used >= TOKEN_LIMIT) {
       return res.status(429).json({ error: "token_limit_exceeded", used, limit: TOKEN_LIMIT });
     }
@@ -342,7 +387,7 @@ app.post("/api/chat", async (req, res) => {
     // Учёт токенов
     if (selectedModel === LIMITED_MODEL && userId) {
       const tokensUsed = data.usage?.total_tokens || 0;
-      const newTotal = addTokenUsage(userId, tokensUsed);
+      const newTotal = await addTokenUsage(userId, tokensUsed);
       return res.json({ reply: data.choices[0].message.content, tokenUsage: { used: newTotal, limit: TOKEN_LIMIT } });
     }
     res.json({ reply: data.choices[0].message.content });
