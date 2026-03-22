@@ -985,11 +985,20 @@
           const resp=await fetch(`/api/generate-image?prompt=${encodeURIComponent(prompt)}`);
           const data=await resp.json();
           if(!resp.ok||data.error){bub.innerHTML='❌ '+(data.error||'Не удалось сгенерировать изображение.');return;}
-          const img=document.createElement('img'); img.className='gen-img'; img.alt=prompt; img.src=data.imageUrl||data.image;
-          dlLink.href=data.imageUrl||data.image; dlLink.download=`almai-${Date.now()}.jpg`;
-          bub.innerHTML=''; bub.appendChild(img);
-          const cap=document.createElement('div'); cap.className='gen-caption'; cap.textContent='🎨 '+prompt;
-          bub.appendChild(cap); scrollBot();
+          const imgSrc = data.imageUrl || data.image;
+          const img=document.createElement('img'); img.className='gen-img'; img.alt=prompt;
+          // Показываем спиннер пока картинка грузится
+          bub.innerHTML='<div class="gen-loading"><div class="gen-spinner"></div><span>Загружаю картинку…</span></div>';
+          img.onload = () => {
+            dlLink.href=imgSrc; dlLink.download=`almai-${Date.now()}.jpg`;
+            bub.innerHTML=''; bub.appendChild(img);
+            const cap=document.createElement('div'); cap.className='gen-caption'; cap.textContent='🎨 '+prompt;
+            bub.appendChild(cap); scrollBot();
+          };
+          img.onerror = () => {
+            bub.innerHTML='❌ Не удалось загрузить изображение. Попробуйте ещё раз.';
+          };
+          img.src = imgSrc;
           const aiTs=new Date().toISOString();
           const saved=`🎨 Сгенерированное изображение: ${prompt}`;
           convo.push({role:'assistant',content:saved});
