@@ -252,7 +252,7 @@ async function tavilySearch(query) {
 }
 
 // Sessions API
-app.get("/api/sessions", requireAuth, (req, res) => {
+app.get("/api/sessions", requireAuth, async (req, res) => {
   const userId = getUserId(req);
   const db = await readDB();
   const list = db.sessions
@@ -261,7 +261,7 @@ app.get("/api/sessions", requireAuth, (req, res) => {
     .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   res.json(list);
 });
-app.post("/api/sessions", requireAuth, (req, res) => {
+app.post("/api/sessions", requireAuth, async (req, res) => {
   const userId = getUserId(req);
   const { title } = req.body;
   const db = await readDB();
@@ -270,7 +270,7 @@ app.post("/api/sessions", requireAuth, (req, res) => {
   await writeDB(db);
   res.json({ id: session2.id, title: session2.title, createdAt: session2.createdAt, updatedAt: session2.updatedAt });
 });
-app.get("/api/sessions/:id", requireAuth, (req, res) => {
+app.get("/api/sessions/:id", requireAuth, async (req, res) => {
   const userId = getUserId(req);
   const db = await readDB();
   const sess = db.sessions.find((s) => s.id === req.params.id);
@@ -278,7 +278,7 @@ app.get("/api/sessions/:id", requireAuth, (req, res) => {
   if (sess.userId && sess.userId !== userId) return res.status(403).json({ error: "Forbidden" });
   res.json(sess);
 });
-app.patch("/api/sessions/:id", requireAuth, (req, res) => {
+app.patch("/api/sessions/:id", requireAuth, async (req, res) => {
   const userId = getUserId(req);
   const db = await readDB();
   const sess = db.sessions.find((s) => s.id === req.params.id);
@@ -289,7 +289,7 @@ app.patch("/api/sessions/:id", requireAuth, (req, res) => {
   await writeDB(db);
   res.json({ id: sess.id, title: sess.title });
 });
-app.post("/api/sessions/:id/messages", requireAuth, (req, res) => {
+app.post("/api/sessions/:id/messages", requireAuth, async (req, res) => {
   const userId = getUserId(req);
   const { messages } = req.body;
   if (!Array.isArray(messages)) return res.status(400).json({ error: "messages must be an array" });
@@ -302,7 +302,7 @@ app.post("/api/sessions/:id/messages", requireAuth, (req, res) => {
   await writeDB(db);
   res.json({ ok: true });
 });
-app.delete("/api/sessions/:id", requireAuth, (req, res) => {
+app.delete("/api/sessions/:id", requireAuth, async (req, res) => {
   const userId = getUserId(req);
   const db = await readDB();
   const idx = db.sessions.findIndex((s) => s.id === req.params.id);
