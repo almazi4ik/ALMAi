@@ -537,6 +537,40 @@ if (TG_TOKEN) {
       if (modes[num]) { settings.personality = modes[num]; return tgSend(chatId, "✅ Режим изменён на *" + names[num] + "*!"); }
       return tgSend(chatId, "❌ Напиши /setmode 1, /setmode 2 или /setmode 3");
     }
+    if (text.startsWith("/calc")) {
+      const expr = text.replace("/calc", "").trim();
+      if (!expr) return tgSend(chatId, "🧮 *Калькулятор*\n\nНапиши: /calc 2+2*10\nПоддерживаются: + - * / ^ ( )");
+      try {
+        const result = Function('"use strict"; return (' + expr.replace(/[^0-9+\-*/().^ ]/g, '') + ')')();
+        return tgSend(chatId, "🧮 " + expr + " = *" + result + "*");
+      } catch { return tgSend(chatId, "❌ Не удалось вычислить. Проверь выражение!"); }
+    }
+    if (text.startsWith("/translate")) {
+      const input = text.replace("/translate", "").trim();
+      if (!input) return tgSend(chatId, "🌐 *Переводчик*\n\nНапиши: /translate привет\nПереведу на английский!");
+      try {
+        const r = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + process.env.GROQ_API_KEY }, body: JSON.stringify({ model: "llama-3.1-8b-instant", messages: [{ role: "system", content: "Ты переводчик. Определи язык текста и переведи: если русский — на английский, если английский — на русский. Выведи только перевод без пояснений." }, { role: "user", content: input }], temperature: 0.3, max_tokens: 300 }) });
+        const d = await r.json();
+        return tgSend(chatId, "🌐 " + (d.choices?.[0]?.message?.content || "Не удалось перевести 😔"));
+      } catch { return tgSend(chatId, "❌ Ошибка перевода. Попробуй позже!"); }
+    }
+    if (text.startsWith("/mood")) {
+      const mood = text.replace("/mood", "").trim() || "хорошее";
+      try {
+        const r = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + process.env.GROQ_API_KEY }, body: JSON.stringify({ model: "llama-3.1-8b-instant", messages: [{ role: "system", content: "Ты музыкальный эксперт. Создай плейлист из 5 песен под настроение пользователя. Формат: эмодзи Исполнитель — Название. Только список, без лишних слов." }, { role: "user", content: "Настроение: " + mood }], temperature: 0.9, max_tokens: 300 }) });
+        const d = await r.json();
+        return tgSend(chatId, "🎵 *Плейлист для настроения: " + mood + "*\n\n" + (d.choices?.[0]?.message?.content || "Не удалось создать плейлист 😔"));
+      } catch { return tgSend(chatId, "❌ Ошибка. Попробуй позже!"); }
+    }
+    if (text.startsWith("/summary")) {
+      const input = text.replace("/summary", "").trim();
+      if (!input) return tgSend(chatId, "📝 *Краткое изложение*\n\nНапиши: /summary [текст]\nСделаю краткое изложение!");
+      try {
+        const r = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + process.env.GROQ_API_KEY }, body: JSON.stringify({ model: "llama-3.1-8b-instant", messages: [{ role: "system", content: "Сделай краткое изложение текста в 2-3 предложениях на русском языке. Только изложение, без вступлений." }, { role: "user", content: input }], temperature: 0.3, max_tokens: 300 }) });
+        const d = await r.json();
+        return tgSend(chatId, "📝 *Краткое изложение:*\n\n" + (d.choices?.[0]?.message?.content || "Не удалось 😔"));
+      } catch { return tgSend(chatId, "❌ Ошибка. Попробуй позже!"); }
+    }
     const imgMatch = text.match(/^(нарисуй|сгенерируй|создай картинку|рисуй)\s+(.+)/i);
     if (imgMatch) {
       await tgSend(chatId, "🎨 Генерирую...");
