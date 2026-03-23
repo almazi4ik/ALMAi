@@ -109,14 +109,14 @@ const ALMAI_INFO = `
 - 💻 Программист — специализация на коде
 
 ## Доступные модели
-- 🧠 Llama 70B — умная, лимит 5000 токенов на пользователя
+- 🧠 Llama 70B — умная и надёжная модель
 - 🦙 Llama 4 Scout — новейшая, очень умная, без лимита
 - ⚡ Llama 8B — быстрая, без лимита
 - 🤖 GPT-OSS 120B — очень мощная, без лимита
 - 🌙 Kimi K2 — мощная, без лимита
 
 ## Лимит токенов
-Llama 70B: лимит 5000 токенов на пользователя. Счётчик в боковой панели. При исчерпании — предложи сменить модель.
+Все модели без искусственных лимитов. Если Groq вернёт ошибку лимита — предложи сменить модель.
 
 ## Платформы
 - 🌐 Сайт: https://almai-6go8.onrender.com
@@ -182,7 +182,7 @@ async function writeDB(data) {
 function generateId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
 // Лимит токенов для Llama 70B
-const TOKEN_LIMIT = 5000;
+const TOKEN_LIMIT = 0; // Лимит убран — обрабатываем реальные ошибки Groq
 const LIMITED_MODEL = "llama-3.3-70b-versatile";
 async function getTokenUsage(userId) {
   const db = await readDB();
@@ -326,12 +326,7 @@ app.post("/api/chat", async (req, res) => {
 
   // Проверка лимита токенов для Llama 70B
   const userId = getUserId(req);
-  if (selectedModel === LIMITED_MODEL && userId) {
-    const used = await getTokenUsage(userId);
-    if (used >= TOKEN_LIMIT) {
-      return res.status(429).json({ error: "token_limit_exceeded", used, limit: TOKEN_LIMIT });
-    }
-  }
+
   let systemPrompt = SYSTEM_PROMPTS[personality] || SYSTEM_PROMPTS.friendly;
   systemPrompt += `\n\nСейчас: ${getCurrentDateTime()} (МСК).`;
   if (message) {
@@ -422,7 +417,14 @@ app.post("/api/chat", async (req, res) => {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
       body: JSON.stringify({ model: selectedModel, messages, temperature: 0.7, max_tokens: 1024 }),
     });
-    if (!response.ok) { await response.json(); return res.status(response.status).json({ error: "Failed to get response from AI" }); }
+    if (!response.ok) {
+      const errData = await response.json();
+      const errMsg = errData.error?.message || "";
+      if (errMsg.includes("rate_limit") || errMsg.includes("quota") || errMsg.includes("tokens")) {
+        return res.status(429).json({ error: "token_limit_exceeded" });
+      }
+      return res.status(response.status).json({ error: "Failed to get response from AI" });
+    }
     const data = await response.json();
     // Учёт токенов
     if (selectedModel === LIMITED_MODEL && userId) {
@@ -586,18 +588,18 @@ if (TG_TOKEN) {
 
 Текущая: *${settings.model}*
 
-Ответь номером:
-1️⃣ Llama 70B (умная, медленнее)
-2️⃣ Llama 8B (быстрая)
-3️⃣ Mixtral (мощная)
-4️⃣ Gemma 2 (от Google)
+1️⃣ Llama 70B 🧠 — умная
+2️⃣ Llama 4 Scout 🦙 — новейшая, 10М токенов!
+3️⃣ Llama 8B ⚡ — быстрая
+4️⃣ GPT-OSS 120B 🤖 — мощная
+5️⃣ Kimi K2 🌙 — мощная
 
 Напиши: /setmodel 1`);
     }
     if (text.startsWith("/setmodel")) {
       const num = text.replace("/setmodel", "").trim();
       const models = { "1": "llama-3.3-70b-versatile", "2": "meta-llama/llama-4-scout-17b-16e-instruct", "3": "llama-3.1-8b-instant", "4": "openai/gpt-oss-120b", "5": "moonshotai/kimi-k2-instruct-0905" };
-      const names = { "1": "Llama 70B", "2": "Llama 4 Scout", "4": "Llama 8B", "5": "Mixtral", "6": "Qwen 32B" };
+      const names = { "1": "Llama 70B 🧠", "2": "Llama 4 Scout 🦙", "3": "Llama 8B ⚡", "4": "GPT-OSS 120B 🤖", "5": "Kimi K2 🌙" };
       if (models[num]) { settings.model = models[num]; return tgSend(chatId, "✅ Модель изменена на *" + names[num] + "*!"); }
       return tgSend(chatId, "❌ Напиши /setmodel 1 — /setmodel 5");
     }
