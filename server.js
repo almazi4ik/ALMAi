@@ -698,7 +698,7 @@ if (TG_TOKEN) {
   let tgOffset = 0;
   async function tgPoll() {
     try {
-      const r = await fetch(TG_API + "/getUpdates?offset=" + tgOffset + "&timeout=10");
+      const r = await fetch(TG_API + "/getUpdates?offset=" + tgOffset + "&timeout=0");
       if (!r.ok) return;
       const data = await r.json();
       for (const update of data.result || []) {
