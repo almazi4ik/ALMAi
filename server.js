@@ -375,11 +375,45 @@ app.post("/api/chat", async (req, res) => {
       const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-        body: JSON.stringify({ model: selectedModel, messages, temperature: 0.7, max_tokens: 1024, stream: true }),
+        body: JSON.stringify({ model: selectedModel, messages, temperature: 0.7, max_tokens: 1024, stream: true, stream_options: { include_usage: true } }),
       });
-      if (!groqRes.ok) { const err = await groqRes.json(); res.write(`data: ${JSON.stringify({ error: err.error?.message || "API error" })}\n\n`); res.end(); return; }
-      groqRes.body.pipe(res);
-    } catch (err) { res.write(`data: ${JSON.stringify({ error: "Server error" })}\n\n`); res.end(); }
+      if (!groqRes.ok) { const err = await groqRes.json(); res.write(`data: ${JSON.stringify({ error: err.error?.message || "API error" })}
+
+`); res.end(); return; }
+      if (selectedModel === LIMITED_MODEL && userId) {
+        const reader = groqRes.body;
+        let buffer = "";
+        let totalTokens = 0;
+        reader.on("data", chunk => {
+          buffer += chunk.toString();
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const jsonStr = line.slice(6).trim();
+              if (jsonStr === "[DONE]") { res.write("data: [DONE]\n\n"); continue; }
+              try {
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.usage && parsed.usage.total_tokens) totalTokens = parsed.usage.total_tokens;
+                res.write("data: " + jsonStr + "\n\n");
+              } catch { res.write(line + "\n\n"); }
+            }
+          }
+        });
+        reader.on("end", async () => {
+          if (totalTokens > 0) {
+            const newTotal = await addTokenUsage(userId, totalTokens);
+            res.write("data: " + JSON.stringify({ tokenUsage: { used: newTotal, limit: TOKEN_LIMIT } }) + "\n\n");
+          }
+          res.end();
+        });
+        reader.on("error", () => res.end());
+      } else {
+        groqRes.body.pipe(res);
+      }
+    } catch (err) { res.write(`data: ${JSON.stringify({ error: "Server error" })}
+
+`); res.end(); }
     return;
   }
   try {
