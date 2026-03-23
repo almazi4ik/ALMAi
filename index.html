@@ -479,6 +479,37 @@
       background: var(--bg-base);
       display: flex; align-items: center; justify-content: center;
     }
+    /* ANIMATIONS */
+    @keyframes fadeInUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+    @keyframes slideInLeft { from { opacity:0; transform:translateX(-20px); } to { opacity:1; transform:translateX(0); } }
+    @keyframes slideInRight { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
+    @keyframes scaleIn { from { opacity:0; transform:scale(0.92); } to { opacity:1; transform:scale(1); } }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
+
+    .msg-row.user { animation: slideInRight .25s cubic-bezier(0.34,1.56,0.64,1) both; }
+    .msg-row.ai { animation: slideInLeft .25s cubic-bezier(0.34,1.56,0.64,1) both; }
+    .bubble { animation: scaleIn .2s cubic-bezier(0.34,1.56,0.64,1) both; }
+    .session-item { animation: fadeInUp .2s ease both; }
+    .welcome-card { animation: fadeInUp .4s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+    /* Smooth sidebar */
+    .sidebar { transition: transform .3s cubic-bezier(0.4,0,0.2,1), opacity .3s ease; }
+
+    /* Smooth send button */
+    #sendBtn { transition: transform .15s cubic-bezier(0.34,1.56,0.64,1), background .2s, box-shadow .2s; }
+    #sendBtn:not(:disabled):hover { transform: scale(1.08); }
+    #sendBtn:not(:disabled):active { transform: scale(0.95); }
+
+    /* Smooth model/personality select */
+    .personality-select { transition: border-color .2s, box-shadow .2s; }
+    .personality-select:focus { box-shadow: 0 0 0 2px rgba(124,58,237,.3); }
+
+    /* Typing animation */
+    .tdot { animation: pulse 1.2s ease-in-out infinite; }
+    .tdot:nth-child(2) { animation-delay: .2s; }
+    .tdot:nth-child(3) { animation-delay: .4s; }
+
     /* AUTH SCREEN */
     #authScreen {
       position: fixed; inset: 0; z-index: 9999;
@@ -801,7 +832,7 @@
   }
 
   // Лимит токенов
-  let tokenUsed = 0; const TOKEN_LIMIT = 5000;
+  let tokenUsed = 0; const TOKEN_LIMIT = 999999;
   async function loadTokenUsage() {
     try {
       const r = await fetch('/api/token-usage');
@@ -821,7 +852,7 @@
     fill.className = 'token-bar-fill' + (pct >= 80 ? ' warn' : '');
     count.textContent = `${tokenUsed} / ${TOKEN_LIMIT}`;
     // Блокировка ввода
-    const isLimited = selectedModel === 'llama-3.3-70b-versatile' && tokenUsed >= TOKEN_LIMIT;
+    const isLimited = false; // лимит убран
     updateLimitMessage(isLimited);
   }
   function updateLimitMessage(isLimited) {
@@ -1183,7 +1214,7 @@
 
     try{
       // Проверка лимита перед отправкой
-      if(selectedModel==='llama-3.3-70b-versatile' && tokenUsed>=TOKEN_LIMIT){
+      if(false){
         renderMsg('ai','⚠️ Лимит токенов Llama 70B исчерпан. Выберите другую модель в меню выше.');
         return;
       }
@@ -1192,7 +1223,7 @@
       hideTyping();
       if(!resp.ok){
         const errData=await resp.json().catch(()=>({}));
-        if(errData.error==='token_limit_exceeded'){
+        if(errData.error==='token_limit_exceeded'||errData.error?.includes?.('rate')){
           tokenUsed=errData.used||TOKEN_LIMIT; updateTokenBar();
           renderMsg('ai','⚠️ Лимит токенов Llama 70B исчерпан. Выберите другую модель в меню выше.');
           return;
