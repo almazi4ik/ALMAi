@@ -373,6 +373,11 @@
     .bw:hover .copy-btn { opacity: 1; }
     .copy-btn:hover { color: var(--p1); background: rgba(124,58,237,.1); }
     .copy-btn.ok { color: var(--success); opacity: 1; }
+    .regen-btn { opacity: 0; background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 13px; padding: 2px 5px; border-radius: 5px; transition: var(--trans); display: flex; align-items: center; }
+    .bw:hover .regen-btn { opacity: 1; }
+    .regen-btn:hover { color: var(--p1); background: rgba(124,58,237,.1); }
+    .regen-btn.spinning { animation: spin .6s linear infinite; opacity: 1; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .typing-row { display: flex; gap: 10px; animation: fadeUp .3s ease; }
     .typing-bubble { padding: 14px 18px; background: var(--ai-bg); border: 1px solid var(--border); border-radius: var(--radius-lg); border-top-left-radius: 4px; display: flex; align-items: center; gap: 5px; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
     .tdot { width: 7px; height: 7px; background: var(--p1); border-radius: 50%; animation: bounce 1.3s infinite; }
@@ -1022,6 +1027,37 @@
     const cp=document.createElement('button'); cp.className='copy-btn'; cp.textContent='⧉'; cp.title='Копировать';
     cp.onclick=()=>copyText(text,cp);
     meta.append(time,cp);
+    if(role==='ai'){
+      const regen=document.createElement('button'); regen.className='regen-btn'; regen.textContent='↺'; regen.title='Regenerate';
+      regen.onclick=async()=>{
+        if(loading)return;
+        regen.classList.add('spinning');
+        // Remove this message from DOM and convo
+        $msg.removeChild(row);
+        // Remove last AI message from convo
+        const lastAiIdx = convo.map(m=>m.role).lastIndexOf('assistant');
+        if(lastAiIdx!==-1) convo.splice(lastAiIdx,1);
+        // Re-send last user message
+        const lastUser = convo.filter(m=>m.role==='user').slice(-1)[0];
+        if(!lastUser){regen.classList.remove('spinning');return;}
+        loading=true; $send.disabled=true;
+        showTyping();
+        try{
+          const resp=await fetch('/api/chat',{method:'POST',headers:getAuthHeaders({'Content-Type':'application/json'}),
+            body:JSON.stringify({message:lastUser.content,history:convo.slice(-20),personality,stream:false,model:selectedModel})});
+          const data=await resp.json();
+          hideTyping();
+          if(data.reply){
+            const aiTs=new Date().toISOString();
+            renderMsg('ai',data.reply,aiTs);
+            convo.push({role:'assistant',content:data.reply});
+          }
+        }catch(e){hideTyping();renderMsg('ai','❌ Ошибка при регенерации.');}
+        loading=false; $send.disabled=false;
+        regen.classList.remove('spinning');
+      };
+      meta.append(regen);
+    }
     bw.append(bub,meta); row.append(av,bw); $msg.appendChild(row); scrollBot();
   }
 
